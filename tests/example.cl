@@ -1,3 +1,0 @@
-class Main {
-    x: Int;
-};

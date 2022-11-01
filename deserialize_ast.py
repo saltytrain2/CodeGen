@@ -252,7 +252,5 @@ def main(argv):
         for elem in class_list:
             file.write(repr(elem))
 
-    pass
-
 if __name__ == '__main__':
     main(sys.argv)

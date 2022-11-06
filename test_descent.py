@@ -25,7 +25,7 @@ for cool_f in itertools.chain(glob.glob("tests/*.cl")):
             correct_answer = f.read().strip()
         os.replace(output_f, correct_f)
 
-    our_result = subprocess.run([sys.executable, "deserialize_ast.py", correct_f], capture_output=True, text=True)
+    our_result = subprocess.run([sys.executable, "deserialize.py", correct_f], capture_output=True, text=True)
     if our_result.stdout != correct_result.stdout or our_result.stderr != correct_result.stderr:
         print("FAIL:", test_name)
         with open("tests/our.stdout", "w") as f:

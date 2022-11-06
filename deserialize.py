@@ -1,6 +1,6 @@
 import sys
 from typing import List, Any, Callable, Tuple
-from ASTNodes import *
+from coolast import *
 
 __all__ = ["read_ast"]
 
@@ -212,8 +212,8 @@ def read_impl_map_entry(ast:List[str]) -> ImplMapEntry:
 
 
 def read_parent_map_entry(ast:List[str]) -> ParentMapEntry:
-    parent = read_line(ast)
     child = read_line(ast)
+    parent = read_line(ast)
     return ParentMapEntry(parent, child)
 
 

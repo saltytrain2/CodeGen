@@ -1,4 +1,4 @@
-class Main {
+class Main inherits IO {
  main(): Object {{5.copy(); "test".copy(); true.copy(); 
-                  "test".length(); } };
+                  out_int("test".length()); } };
 };

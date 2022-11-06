@@ -174,6 +174,9 @@ class DynamicDispatch(Expression):
 
         return super().__repr__() + f"{repr(self.obj)}{repr(self.method)}{len(self.args)}\n{args_str}"
 
+    def get_func_name(self) -> str:
+        return self.method.get_name()
+
 
 class StaticDispatch(Expression):
     def __init__(self, lineno:str, obj:Expression, class_type:Identifier, 
@@ -191,6 +194,9 @@ class StaticDispatch(Expression):
         args_str = "".join(args_repr)
 
         return super().__repr__() + f"{repr(self.obj)}{repr(self.class_type)}{repr(self.method)}{len(self.args)}\n{args_str}"
+    
+    def get_func_name(self) -> str:
+        return self.method.get_name()
 
 
 class SelfDispatch(Expression):
@@ -206,6 +212,9 @@ class SelfDispatch(Expression):
         args_str = "".join(args_repr)
 
         return super().__repr__() + f"{repr(self.method)}{len(self.args)}\n{args_str}"
+    
+    def get_func_name(self) -> str:
+        return self.method.get_name()
 
 
 class If(Expression):
@@ -504,6 +513,9 @@ class ClassAttribute:
     def __repr__(self) -> str:
         expr_str = "" if self.attr_expr is None else repr(self.attr_expr)
         return f"{self.attr_kind}\n{self.attr_name}\n{self.attr_type}\n{expr_str}"
+    
+    def get_name(self) -> str:
+        return self.attr_name
 
 
 class ImplMethod:
@@ -522,7 +534,8 @@ class ImplMethod:
 
         return f"{self.method_name}\n{len(self.formal_list)}\n{formal_str}{self.parent}\n{expr_str}"
 
-    pass
+    def get_name(self) -> str:
+        return self.method_name
 
 
 class ClassMapEntry:
@@ -559,4 +572,4 @@ class ParentMapEntry:
         self.child = child
 
     def __repr__(self) -> str:
-        return f"{self.parent}\n{self.child}\n"
+        return f"{self.child}\n{self.parent}\n"

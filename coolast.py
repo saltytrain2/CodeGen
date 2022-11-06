@@ -159,12 +159,14 @@ class Assign(Expression):
         return super().__repr__() + f"{repr(self.lhs)}{repr(self.rhs)}"
 
 
-class DynamicDispatch(Expression):
-    def __init__(self, lineno, obj:Expression, method:Identifier, args:List[Expression], exp_type:str=None):
-        super().__init__(lineno, "dynamic_dispatch", exp_type)
+class Dispatch(Expression):
+    def __init__(self, lineno:str, kind:str, method:Identifier, args:List[Expression],
+            obj:Expression=None, class_type:Identifier=None, exp_type:str=None):
+        super().__init__(lineno, kind, exp_type)
         self.obj = obj
         self.method = method
         self.args = args
+        self.class_type = class_type
 
     def __repr__(self) -> str:
         args_repr = []
@@ -172,49 +174,39 @@ class DynamicDispatch(Expression):
             args_repr.append(repr(arg))
         args_str = "".join(args_repr)
 
-        return super().__repr__() + f"{repr(self.obj)}{repr(self.method)}{len(self.args)}\n{args_str}"
+        class_type_str = repr(self.class_type) if self.class_type is not None else ""
+        obj_str = repr(self.obj) if self.obj is not None else ""
+
+        return super().__repr__() + f"{obj_str}{class_type_str}{repr(self.method)}{len(self.args)}\n{args_str}"
 
     def get_func_name(self) -> str:
         return self.method.get_name()
 
 
-class StaticDispatch(Expression):
+class DynamicDispatch(Dispatch):
+    def __init__(self, lineno, obj:Expression, method:Identifier, args:List[Expression], exp_type:str=None):
+        super().__init__(lineno, "dynamic_dispatch", method, args, obj, None, exp_type)
+
+
+    def __repr__(self) -> str:
+        return super().__repr__()
+
+
+class StaticDispatch(Dispatch):
     def __init__(self, lineno:str, obj:Expression, class_type:Identifier, 
                  method:Identifier, args:List[Expression], exp_type:str=None):
-        super().__init__(lineno, "static_dispatch", exp_type)
-        self.obj = obj
-        self.class_type = class_type
-        self.method = method
-        self.args = args
+        super().__init__(lineno, "static_dispatch", method, args, obj, class_type, exp_type)
 
     def __repr__(self) -> str:
-        args_repr = []
-        for i in range(len(self.args)):
-            args_repr.append(repr(self.args[i]))
-        args_str = "".join(args_repr)
-
-        return super().__repr__() + f"{repr(self.obj)}{repr(self.class_type)}{repr(self.method)}{len(self.args)}\n{args_str}"
-    
-    def get_func_name(self) -> str:
-        return self.method.get_name()
+        return super().__repr__()
 
 
-class SelfDispatch(Expression):
+class SelfDispatch(Dispatch):
     def __init__(self, lineno: str, method:Identifier, args:List[Expression], exp_type:str=None):
-        super().__init__(lineno, "self_dispatch", exp_type)
-        self.method = method
-        self.args = args
+        super().__init__(lineno, "self_dispatch", method, args, None, None, exp_type)
 
     def __repr__(self) -> str:
-        args_repr = []
-        for arg in self.args:
-            args_repr.append(repr(arg))
-        args_str = "".join(args_repr)
-
-        return super().__repr__() + f"{repr(self.method)}{len(self.args)}\n{args_str}"
-    
-    def get_func_name(self) -> str:
-        return self.method.get_name()
+        return super().__repr__()
 
 
 class If(Expression):
@@ -536,6 +528,9 @@ class ImplMethod:
 
     def get_name(self) -> str:
         return self.method_name
+
+    def get_formal_list(self) -> List[str]:
+        return self.formal_list
 
 
 class ClassMapEntry:

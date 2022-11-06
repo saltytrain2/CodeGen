@@ -19,6 +19,7 @@ class TacOp(Enum):
     INT = auto()
     BOOL = auto()
     NEW = auto()
+    ASSIGN = auto()
 
 
 class TacCmpOp(Enum):
@@ -181,11 +182,12 @@ class TacRet(TacInst):
 
 class TacNot(TacUnaryOp):
     def __init__(self, src:TacReg, dest:TacReg):
-        super().__init__(TacOp.NOT)
+        super().__init__(TacOp.NOT, src, dest)
         self.src = src
         self.dest = dest
 
     def __repr__(self) -> str:
+        return super().__repr__()
         raise NotImplementedError
 
 
@@ -194,14 +196,27 @@ class TacNegate(TacUnaryOp):
         super().__init__(TacOp.NOT, src, dest)
 
     def __repr__(self) -> str:
+        return super().__repr__()
         raise NotImplementedError
 
 
-class TacIsVoid(TacInst):
+class TacIsVoid(TacUnaryOp):
     def __init__(self, src:TacReg, dest:TacReg):
-        super().__init__(TacOp.ISVOID)
+        super().__init__(TacOp.ISVOID, src, dest)
 
     def __repr__(self) -> str:
+        return super().__repr__()
+        raise NotImplementedError
+
+
+class TacAssign(TacInst):
+    def __init__(self, src:TacReg, dest:TacReg):
+        super().__init__(TacOp.ASSIGN)
+        self.src = src
+        self.dest = dest
+
+    def __repr__(self) -> str:
+        return f"{repr(self.dest)} = {repr(self.src)}\n"
         raise NotImplementedError
 
 
@@ -232,6 +247,7 @@ class TacBool(TacInst):
         self.dest = dest
 
     def __repr__(self) -> str:
+        return f"{repr(self.dest)} = {str(self.boolval)}\n"
         raise NotImplementedError
 
 
@@ -242,7 +258,9 @@ class TacNew(TacInst):
         self.dest = dest
 
     def __repr__(self) -> str:
+        return f"{repr(self.dest)} = new {self.object}\n"
         raise NotImplementedError
+
 
 
 
@@ -253,6 +271,7 @@ class Tac(object):
     class_map:Dict[str, List[ClassAttribute]] = defaultdict(list)
     impl_map:Dict[str, List[ImplMethod]] = defaultdict(list)
     parent_map:Dict[str, str] = defaultdict(str)
+
     def __init__(self, class_map:List[ClassMapEntry], impl_map:List[ImplMapEntry],
             parent_map:List[ParentMapEntry], ast:List[Class]):
         for entry in class_map:
@@ -269,86 +288,91 @@ class Tac(object):
         self.processed_funcs = []
         self.cur_tacfunc = None
         self.num = 0
+        self.symbol_table["self"].append(self.create_reg())
 
     def tacgen(self) -> None:
-        for c in self.ast:
-            self.tacgen_class(c)
+        for c in self.impl_map:
+            self.num = 1
+            for attr in self.class_map[c]:
+                self.symbol_table[attr.get_name()].append(self.create_reg())
 
-    def tacgen_class(self, cls:Class):
-        self.num = 1
-        for attr in self.class_map[cls.get_class_name()]:
-            self.symbol_table[attr.get_name()].append(TacReg(self.num))
-            self.num += 1
-        
-        for method in [m for m in cls.get_feature_list() if isinstance(m, Method)]:
-            self.tacgen_func(method)
+            for method in self.impl_map[c]:
+                if method.parent != c or c in {"Object", "Bool", "String", "Int", "IO"}:
+                    continue
 
-        for attr in self.class_map[cls.get_class_name()]:
-            self.symbol_table[attr.get_name()].pop()
+                self.tacgen_func(method)
 
+            for attr in self.class_map[c]:
+                self.symbol_table[attr.get_name()].pop()
 
-    def tacgen_func(self, method:Method) -> None:
+    def create_reg(self) -> TacReg:
+        temp = TacReg(self.num)
+        self.num += 1
+        return temp
+    
+    def create_label(self) -> TacLabel:
+        temp = TacLabel(self.num)
+        self.num += 1
+        return temp
+
+    def tacgen_func(self, method:ImplMethod) -> None:
         # self.num = 1
         temp_num = self.num
         for param in method.get_formal_list():
-            self.symbol_table[param.get_name()].append(TacReg(self.num))
-            self.num += 1
+            self.symbol_table[param].append(self.create_reg())
 
-        self.cur_tacfunc = TacFunc(method.get_name())
-        ret_reg = self.tacgen_exp(method.body)
+        self.cur_tacfunc = TacFunc(f"{method.parent}.{method.get_name()}")
+        ret_reg = self.tacgen_exp(method.expr)
         self.cur_tacfunc.append(TacRet(ret_reg))
         self.processed_funcs.append(self.cur_tacfunc)
 
         for param in method.get_formal_list():
-            self.symbol_table[param.get_name()].pop()
+            self.symbol_table[param].pop()
 
         self.num = temp_num
-
 
     def tacgen_exp(self, exp:Expression) -> TacReg:
         if isinstance(exp, Binop):
             lhs_reg = self.tacgen_exp(exp.lhs)
             rhs_reg = self.tacgen_exp(exp.rhs)
-            ret_reg = TacReg(self.num)
-            self.num += 1
+            dest_reg = self.create_reg()
             if isinstance(exp, Plus):
-                self.cur_tacfunc.append(TacAdd(lhs_reg, rhs_reg, ret_reg))
+                self.cur_tacfunc.append(TacAdd(lhs_reg, rhs_reg, dest_reg))
             elif isinstance(exp, Minus):
-                self.cur_tacfunc.append(TacSub(lhs_reg, rhs_reg, ret_reg))
+                self.cur_tacfunc.append(TacSub(lhs_reg, rhs_reg, dest_reg))
             elif isinstance(exp, Times):
-                self.cur_tacfunc.append(TacMul(lhs_reg, rhs_reg, ret_reg))
+                self.cur_tacfunc.append(TacMul(lhs_reg, rhs_reg, dest_reg))
             elif isinstance(exp, Divide):
-                self.cur_tacfunc.append(TacDiv(lhs_reg, rhs_reg, ret_reg))
+                self.cur_tacfunc.append(TacDiv(lhs_reg, rhs_reg, dest_reg))
             elif isinstance(exp, Lt):
-                self.cur_tacfunc.append(TacIcmp(TacCmpOp.LT, lhs_reg, rhs_reg, ret_reg))
+                self.cur_tacfunc.append(TacIcmp(TacCmpOp.LT, lhs_reg, rhs_reg, dest_reg))
             elif isinstance(exp, Le):
-                self.cur_tacfunc.append(TacIcmp(TacCmpOp.LE, lhs_reg, rhs_reg, ret_reg))
+                self.cur_tacfunc.append(TacIcmp(TacCmpOp.LE, lhs_reg, rhs_reg, dest_reg))
             else:
-                self.cur_tacfunc.append(TacIcmp(TacCmpOp.EQ, lhs_reg, rhs_reg, ret_reg))
-            return ret_reg
+                self.cur_tacfunc.append(TacIcmp(TacCmpOp.EQ, lhs_reg, rhs_reg, dest_reg))
+            return dest_reg
         elif isinstance(exp, Integer):
-            # if not self.symbol_table[exp.val]:
-            #     self.symbol_table[exp.val].append(TacReg(self.num))
-            #     self.num += 1
-            
-            # int_reg = self.symbol_table[exp.val][-1] 
-            int_reg = TacReg(self.num)
-            self.num += 1
+            int_reg = self.create_reg()
             self.cur_tacfunc.append(TacInt(int(exp.val), int_reg))
             return int_reg
         elif isinstance(exp, StringExp):
-            # need to make sure we do not have any clashes between attr names 
-            # and string constants in symbol table
-            # str_val = "." + exp.val
-            # if not self.symbol_table[str_val]:
-            #     self.symbol_table[str_val].append(TacReg(self.num))
-            #     self.num += 1
-            
-            # str_reg = self.symbol_table[str_val][-1]
-            str_reg = TacReg(self.num)
-            self.num += 1
+            str_reg = self.create_reg()
             self.cur_tacfunc.append(TacString(exp.val, str_reg))
             return str_reg
+        elif isinstance(exp, Bool):
+            bool_reg = self.create_reg()
+            self.cur_tacfunc.append(TacBool(True if exp.kind == "true" else False, bool_reg))
+            return bool_reg
+        # elif isinstance(exp, Dispatch):
+        #     obj_reg = self.tacgen_exp(exp.obj) if exp.obj is not None else TacReg(0)
+        #     param_regs = []
+        #     for arg in exp.args:
+        #         param_regs.append(self.tacgen_exp(arg))
+            
+        #     ret_reg = self.create_reg()
+        #     func_str = None
+        #     self.cur_tacfunc.append(TacCall())
+        #     pass
         elif isinstance(exp, DynamicDispatch):
             obj_reg = self.tacgen_exp(exp.obj)
             param_regs = []
@@ -376,6 +400,69 @@ class Tac(object):
             # pass
         elif isinstance(exp, Variable):
             return self.symbol_table[exp.var.name][-1]
+        elif isinstance(exp, New):
+            dest_reg = self.create_reg()
+            self.cur_tacfunc.append(TacNew(exp.class_name, dest_reg))
+            return dest_reg
+        elif isinstance(exp, UnaryOp):
+            rhs_reg = self.tacgen_exp(exp.rhs)
+            dest_reg = self.create_reg()
+            if isinstance(exp, Negate):
+                self.cur_tacfunc.append(TacNegate(rhs_reg, dest_reg))
+            elif isinstance(exp, Not):
+                self.cur_tacfunc.append(TacNot(rhs_reg, dest_reg))
+            else:
+                self.cur_tacfunc.append(TacIsVoid(rhs_reg, dest_reg))
+            return dest_reg
+        elif isinstance(exp, If):
+            true_label = self.create_label()
+            false_label = self.create_label()
+            end_label = self.create_label()
+            res_reg = self.create_reg()
+            cond_reg = self.tacgen_exp(exp.condition)
+            self.cur_tacfunc.append(TacBr(cond_reg, true_label, false_label))
+
+            self.cur_tacfunc.append(true_label)
+            then_reg = self.tacgen_exp(exp.then_body)
+            self.cur_tacfunc.append(TacAssign(then_reg, res_reg))
+            self.cur_tacfunc.append(TacBr(true_label=end_label))
+
+            self.cur_tacfunc.append(false_label)
+            else_reg = self.tacgen_exp(exp.else_body)
+            self.cur_tacfunc.append(TacAssign(else_reg, res_reg))
+            self.cur_tacfunc.append(TacBr(true_label=end_label))
+            self.cur_tacfunc.append(end_label)
+
+            return res_reg
+        elif isinstance(exp, While):
+            while_start = self.create_label()
+            while_body = self.create_label()
+            while_end = self.create_label()
+            self.cur_tacfunc.append(while_start)
+            cond_reg = self.tacgen_exp(exp.condition)
+            self.cur_tacfunc.append(TacBr(cond_reg, while_body, while_end))
+
+            self.cur_tacfunc.append(while_body)
+            self.tacgen_exp(exp.while_body)
+            self.cur_tacfunc.append(TacBr(true_label=while_start))
+
+            self.cur_tacfunc.append(while_end)
+            ret_reg = self.create_reg()
+            self.cur_tacfunc.append(TacNew("Object", ret_reg))
+            return ret_reg
+        elif isinstance(exp, Block):
+            for expr in exp.body:
+                ret_reg = self.tacgen_exp(expr)
+            return ret_reg
+        elif isinstance(exp, Assign):
+            rhs_reg = self.tacgen_exp(exp.rhs)
+            lhs_reg = self.symbol_table[exp.lhs.name][-1]
+            return lhs_reg
+
+        elif isinstance(exp, Let):
+            pass
+        elif isinstance(exp, Case):
+            pass
 
     def debug_tac(self) -> None:
         for func in self.processed_funcs:

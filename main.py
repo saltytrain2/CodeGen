@@ -2,7 +2,6 @@ from collections import defaultdict
 from deserialize import *
 from coolast import *
 from tac import *
-from maps import *
 import sys
 
 

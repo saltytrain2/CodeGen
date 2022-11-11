@@ -509,6 +509,9 @@ class ClassAttribute:
     def get_name(self) -> str:
         return self.attr_name
 
+    def get_type(self) -> str:
+        return self.attr_type
+
 
 class ImplMethod:
     def __init__(self, method_name:str, formal_list:List[str], parent:str, expr:Expression=None):

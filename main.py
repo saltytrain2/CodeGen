@@ -1,7 +1,7 @@
 from collections import defaultdict
 from deserialize import *
 from coolast import *
-from tac import *
+from tac import Tac
 import sys
 
 

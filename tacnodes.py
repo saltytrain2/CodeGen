@@ -32,7 +32,7 @@ class TacCmpOp(Enum):
 
 
 class TacFunc:
-    def __init__(self, name:str, params:List[TacReg]=None, insts:List[TacInst]=None):
+    def __init__(self, name:str, params:List[TacReg]=None, insts:List[TacValue]=None):
         self.name = name
         self.params = params if params is not None else []
         self.insts = insts if insts is not None else []
@@ -87,7 +87,7 @@ class TacLabel(TacValue):
         return f"{self.num}:\n"
 
 
-class TacInst:
+class TacInst(TacValue):
     def __init__(self, op:TacOp):
         self.op = op
 
@@ -123,7 +123,8 @@ class TacAdd(TacBinOp):
     def __repr__(self) -> str:
         return super().__repr__()
     
-    def gen_x86(self) -> str:
+    def gen_x86_unopt(self) -> str:
+
         pass
 
 
@@ -164,8 +165,12 @@ class TacBr(TacInst):
         else:
             return f"br {repr(self.cond)} label %{self.true_label.num} label %{self.false_label.num}\n"
     
-    def gen_x86(self) -> str:
-        pass
+    def get_branch_targets(self) -> List[TacLabel]:
+        labels = [self.true_label]
+        if self.false_label is not None:
+            labels.append(self.false_label)
+
+        return labels
 
 
 class TacIcmp(TacInst):

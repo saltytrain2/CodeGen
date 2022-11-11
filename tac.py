@@ -198,6 +198,7 @@ class Tac(object):
             false_label = self.create_label()
             end_label = self.create_label()
             res_reg = self.create_reg()
+            self.cur_tacfunc.append(TacDeclare(exp.exp_type, res_reg))
             cond_reg = self.tacgen_exp(exp.condition)
             self.cur_tacfunc.append(TacBr(cond_reg, true_label, false_label))
 
@@ -212,7 +213,9 @@ class Tac(object):
             self.cur_tacfunc.append(TacBr(true_label=end_label))
             self.cur_tacfunc.append(end_label)
 
-            return res_reg
+            ret_reg = self.create_reg()
+            self.cur_tacfunc.append(TacLoad(res_reg, ret_reg))
+            return ret_reg
         elif isinstance(exp, While):
             while_start = self.create_label()
             while_body = self.create_label()
@@ -304,3 +307,6 @@ class Tac(object):
     def debug_tac(self) -> None:
         for func in self.processed_funcs:
             print(repr(func))
+
+    def get_tacfuncs(self) -> List[TacFunc]:
+        return self.processed_funcs

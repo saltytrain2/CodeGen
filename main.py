@@ -2,6 +2,7 @@ from collections import defaultdict
 from deserialize import *
 from coolast import *
 from tac import Tac
+from cfgnodes import CFG
 import sys
 
 
@@ -13,7 +14,13 @@ def main(argv):
     class_map, impl_map, parent_map, class_list = read_ast(ast_lines)
     tac = Tac(class_map, impl_map, parent_map, class_list)
     tac.tacgen()
-    tac.debug_tac()
+    tacfuncs = tac.get_tacfuncs()
+    for tacfunc in tacfuncs:
+        cfg = CFG(tacfunc)
+        cfg.debug_cfg()
+        # tacfunc.print_tac()
+        # print()
+    # tac.debug_tac()
 
 if __name__ == '__main__':
     main(sys.argv)

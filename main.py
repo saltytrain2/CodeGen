@@ -2,7 +2,7 @@ from collections import defaultdict
 from deserialize import *
 from coolast import *
 from tac import Tac
-from cfgnodes import CFG
+from cfg import CFG
 import sys
 
 
@@ -15,12 +15,11 @@ def main(argv):
     tac = Tac(class_map, impl_map, parent_map, class_list)
     tac.tacgen()
     tacfuncs = tac.get_tacfuncs()
-    for tacfunc in tacfuncs:
-        cfg = CFG(tacfunc)
-        cfg.debug_cfg()
-        # tacfunc.print_tac()
-        # print()
-    # tac.debug_tac()
+    cfg = CFG(tacfuncs)
+    cfg.optimize()
+    cfg.set_dominators()
+    cfg.debug_cfg()
+    #cfg.build_interference_graph()
 
 if __name__ == '__main__':
     main(sys.argv)

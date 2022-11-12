@@ -63,6 +63,15 @@ class TacReg(TacValue):
     def __repr__(self) -> str:
         return "%" + str(self.num)
 
+    def __eq__(self, other) -> bool:
+        return isinstance(other, TacReg) and self.num == other.num
+
+    def __ne__(self, other) -> bool:
+        return not self.__eq__(other)
+    
+    def __hash__(self) -> int:
+        return hash(self.num)
+
 
 class TacImm(TacValue):
     def __init__(self, val:int):
@@ -79,20 +88,27 @@ class TacStr(TacValue):
     def __repr__(self) -> str:
         return f"\"{self.val}\""
 
-class TacLabel(TacValue):
-    def __init__(self, num:int):
-        self.num = num
 
-    def __repr__(self) -> str:
-        return f"{self.num}:\n"
-
-
-class TacInst(TacValue):
+class TacInst(object):
     def __init__(self, op:TacOp):
         self.op = op
 
     def __repr__(self) -> str:
         return self.op.name.lower()
+    
+    def get_live_regs(self) -> List[TacReg]:
+        raise NotImplementedError
+    
+    def get_dead_reg(self) -> TacReg:
+        raise NotImplementedError
+
+
+class TacLabel(TacInst):
+    def __init__(self, num:int):
+        self.num = num
+
+    def __repr__(self) -> str:
+        return f"{self.num}:\n"
 
 
 class TacUnaryOp(TacInst):

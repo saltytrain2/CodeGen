@@ -51,13 +51,13 @@ class Bazz inherits IO {
 };
 
 (* scary . . . *)
-class Main {
+class Main inherits IO {
   a : Bazz <- new Bazz;
   b : Foo <- new Foo;
   c : Razz <- new Razz;
   d : Bar <- new Bar;
 
-  main(): String { "do nothing" };
+  main(): SELF_TYPE { out_string("\n") };
 
 };
 

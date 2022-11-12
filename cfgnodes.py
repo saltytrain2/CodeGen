@@ -1,5 +1,7 @@
 from __future__ import annotations
 from tacnodes import *
+from collections import deque
+from typing import Deque
 
 
 class CFGBlock(object):
@@ -127,6 +129,17 @@ class CFGFunc(object):
             for cfg_block in self.cfg_blocks[1:]:
                 prev_dominators = cfg_block.dominators.copy()
                 cfg_block.dominators = {cfg_block}.union(set.intersection(*[pred.dominators for pred in cfg_block.preds]))
-                if prev_dominators != cfg_block.dominators:
-                    changed = True
+                changed = True if prev_dominators != cfg_block.dominators else changed
 
+    def alloc_regs(self) -> None:
+        used_regs:Dict[PReg, TacReg] = defaultdict(TacReg, num=-1)
+        visited_blocks:Set[CFGBlock] = set()
+        work_list:Deque[CFGBlock] = deque()
+        work_list.append(self.cfg_map["entry"])
+
+        while work_list:
+            cur_block = work_list.popleft()
+            visited_blocks.add(cur_block)
+
+            
+            pass

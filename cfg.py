@@ -18,11 +18,17 @@ class CFG(object):
             print(repr(cfg_func))
     
     def optimize(self) -> None:
+        self.set_dominators()
         pass
     
     def set_dominators(self) -> None:
         for cfg in self.cfg_list:
             cfg.set_dominators()
+
+    def alloc_regs(self) -> None:
+        for cfg in self.cfg_list:
+            cfg.alloc_regs()
+        pass
 
     def build_interference_graph(self) -> None:
         # find the live ranges of each variable

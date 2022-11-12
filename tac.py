@@ -71,13 +71,12 @@ class Tac(object):
         self.cur_tacfunc.append(TacStore(TacImm(f"{c}..vtable"), obj_reg, 2))
 
         for attr in self.class_map[c]:
-            reg = self.create_reg()
-            self.cur_tacfunc.append(TacDeclare(attr.attr_type, reg))
             if attr.attr_type in {"Bool", "Int", "String"}:
                 temp_reg = self.create_reg()
                 self.cur_tacfunc.append(TacCreate(attr.attr_type, temp_reg))
-                self.cur_tacfunc.append(TacStore(temp_reg, reg))
-            self.cur_tacfunc.append(TacStore(reg, obj_reg, self.attr_table[attr.get_name()]))
+                self.cur_tacfunc.append(TacStore(temp_reg, obj_reg, self.attr_table[attr.get_name()]))
+            else:
+                self.cur_tacfunc.append(TacStore(TacImm(0), obj_reg, self.attr_table[attr.get_name()]))
         
         ret_reg = self.create_reg()
         self.cur_tacfunc.append(TacLoad(obj_reg, ret_reg))

@@ -23,6 +23,7 @@ class TacOp(Enum):
     STORE = auto()
     DECLARE = auto()
     CREATE = auto()
+    LABEL = auto()
 
 
 class TacCmpOp(Enum):
@@ -51,14 +52,34 @@ class TacFunc:
 
     pass
 
+class PReg(object):
+    def __init__(self, name:str, offset:int=None):
+        self.name = name
+        self.offset = offset
+
+    def __repr__(self) -> str:
+        offset_str = f"+{self.offset}" if self.offset is not None else ""
+        return f"{self.name}{offset_str}"
+    pass
+
 
 class TacValue(object):
+    # def __init__(self, val:any):
+    #     self.val 
+    #     self.physical_reg = None
+    
+    # def set_reg(self, reg:str) -> None:
+    #     self.physical_reg = reg
+    
+    # def get_reg(self) -> str:
+    #     return self.physical_reg
     pass
 
 
 class TacReg(TacValue):
     def __init__(self, num:int):
         self.num = num
+        self.physical_reg:PReg = None
 
     def __repr__(self) -> str:
         return "%" + str(self.num)
@@ -71,6 +92,12 @@ class TacReg(TacValue):
     
     def __hash__(self) -> int:
         return hash(self.num)
+
+    def set_physical_reg(self, reg:PReg) -> None:
+        self.physical_reg = reg
+    
+    def get_physical_reg(self) -> PReg:
+        return self.physical_reg
 
 
 class TacImm(TacValue):
@@ -105,6 +132,7 @@ class TacInst(object):
 
 class TacLabel(TacInst):
     def __init__(self, num:int):
+        super().__init__(TacOp.LABEL)
         self.num = num
 
     def __repr__(self) -> str:
@@ -273,7 +301,7 @@ class TacStore(TacInst):
     
     def __repr__(self) -> str:
         offset_str = f"[{str(self.offset)}]" if self.offset is not None else ""
-        return f"store {repr(self.dest)}{offset_str} {repr(self.src)}\n"
+        return f"store {repr(self.src)} {repr(self.dest)}{offset_str}\n"
 
 
 class TacCreate(TacInst):

@@ -14,7 +14,6 @@ class TacOp(Enum):
     CALL = auto()
     NOT = auto()
     RET = auto()
-    ISVOID = auto()
     STRING = auto()
     INT = auto()
     BOOL = auto()
@@ -24,6 +23,7 @@ class TacOp(Enum):
     DECLARE = auto()
     CREATE = auto()
     LABEL = auto()
+    SYSCALL = auto()
 
 
 class TacCmpOp(Enum):
@@ -64,22 +64,19 @@ class PReg(object):
 
 
 class TacValue(object):
-    # def __init__(self, val:any):
-    #     self.val 
-    #     self.physical_reg = None
+    physical_reg:PReg = None
     
-    # def set_reg(self, reg:str) -> None:
-    #     self.physical_reg = reg
+    def set_preg(self, reg:PReg) -> None:
+        self.physical_reg = reg
     
-    # def get_reg(self) -> str:
-    #     return self.physical_reg
+    def get_preg(self) -> PReg:
+        return self.physical_reg
     pass
 
 
 class TacReg(TacValue):
     def __init__(self, num:int):
         self.num = num
-        self.physical_reg:PReg = None
 
     def __repr__(self) -> str:
         return "%" + str(self.num)
@@ -93,19 +90,13 @@ class TacReg(TacValue):
     def __hash__(self) -> int:
         return hash(self.num)
 
-    def set_physical_reg(self, reg:PReg) -> None:
-        self.physical_reg = reg
-    
-    def get_physical_reg(self) -> PReg:
-        return self.physical_reg
-
 
 class TacImm(TacValue):
     def __init__(self, val:int):
         self.val = val
 
     def __repr__(self) -> str:
-        return str(self.val)
+        return "$" + str(self.val)
 
 
 class TacStr(TacValue):
@@ -271,15 +262,6 @@ class TacNegate(TacUnaryOp):
         raise NotImplementedError
 
 
-class TacIsVoid(TacUnaryOp):
-    def __init__(self, src:TacReg, dest:TacReg):
-        super().__init__(TacOp.ISVOID, src, dest)
-
-    def __repr__(self) -> str:
-        return super().__repr__()
-        raise NotImplementedError
-
-
 class TacLoad(TacInst):
     def __init__(self, src:TacReg, dest:TacReg, offset:int=None):
         super().__init__(TacOp.LOAD)
@@ -322,3 +304,14 @@ class TacDeclare(TacInst):
 
     def __repr__(self) -> str:
         return f"{repr(self.dest)} = declare {self.object}\n"
+
+
+class TacSyscall(TacInst):
+    def __init__(self, func:str, args:List[TacReg], dest:TacReg):
+        super().__init__(TacOp.SYSCALL)
+        self.func = func
+        self.args = args
+        self.dest = dest
+
+    def __repr__(self) -> str:
+        return f"{repr(self.dest)} = call {self.func}{str(self.args)}\n"

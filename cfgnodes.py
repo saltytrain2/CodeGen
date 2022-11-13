@@ -9,11 +9,8 @@ class CFGBlock(object):
         self.name = name
         self.preds:List[CFGBlock] = []
         self.succs:List[CFGBlock] = []
-        self.liveness:List[Set[TacReg]] = []
         self.live_out:Set[TacReg] = set()
         self.live_in:Set[TacReg] = set()
-        self.kill:set[TacReg] = set()
-        self.gen:Set[TacReg] = set()
         self.dominators:Set[CFGBlock] = set()
         self.inst_list:List[TacInst] = []
     
@@ -35,6 +32,12 @@ class CFGBlock(object):
         # error case
         raise Exception("last instruction is not a terminator")
     
+    def get_live_in(self) -> Set[TacReg]:
+        return self.live_in
+
+    def get_live_out(self) -> Set[TacReg]:
+        return self.live_out
+    
     def __repr__(self) -> str:
         str_list = [
             f"Preds: {[i.name for i in self.preds]}\n", 
@@ -48,29 +51,16 @@ class CFGBlock(object):
     
     def calc_liveness(self, out_set=None) -> bool:
         changed = False
-        max_index = len(self.inst_list) - 1
-        if out_set is None:
-            out_set = set()
-        self.live_out = out_set.copy()
-        live_sets = [out_set.copy()]
+        self.live_out = self.live_out.union(*[i.get_live_out() for i in self.succs])
+        succ_live = self.live_out
+        for inst in reversed(self.inst_list):
+            nodechanged = inst.update_live_set(succ_live)
+            if not changed:
+                changed = nodechanged
+            succ_live = inst.get_live_set()
 
-        for i, inst in enumerate(reversed(self.inst_list[:])):
-            dead_reg = inst.get_dead_reg()
-            # we know that since this is SSA, encountering an assignment to a register
-            # that has not been used must be dead code
-            if dead_reg is not None and dead_reg not in out_set:
-                self.inst_list.remove(inst)
-                continue
-            
-            live_regs = inst.get_live_regs()
-            out_set = out_set.update(live_regs)
-            live_sets.append(out_set.copy())
-
-            if out_set != self.liveness[max_index - i]:
-                changed = True
-        
-        self.liveness = live_sets
         return changed
+
 
 
 class CFGFunc(object):
@@ -79,6 +69,7 @@ class CFGFunc(object):
         self.params = func.params
         self.cfg_map:Dict[str, CFGBlock] = defaultdict(CFGBlock, name="")
         self.cfg_blocks:List[CFGBlock] = []
+        self.interference:Dict[TacReg, Set[TacReg]] = defaultdict(set)
         self.process_func(func)
     
     def process_func(self, func:TacFunc) -> None:
@@ -140,8 +131,6 @@ class CFGFunc(object):
         while work_list:
             cur_block = work_list.popleft()
             visited_blocks.add(cur_block)
-
-
             pass
 
     def precolor_regs(self) -> None:
@@ -158,4 +147,26 @@ class CFGFunc(object):
                     inst.dest.set_preg(PReg("rbp", offset))
                     offset -= 8
             pass
+        pass
+
+    def calc_interference(self) -> None:
+        # generate live sets for each node in CFG
+        work_list:Deque[CFGBlock] = deque()
+        work_list.append(self.cfg_blocks[-1])
+        while work_list:
+            cfg_block = work_list.popleft()
+            changed = cfg_block.calc_liveness()
+
+            if changed:
+                for pred in cfg_block.preds:
+                    work_list.append(pred)
+
+        # through these live sets, generate the resulting interference graph
+        for cfg_block in self.cfg_blocks:
+            for inst in cfg_block.inst_list:
+                live_regs = inst.get_live_set()
+                for reg in live_regs:
+                    self.interference[reg].update(live_regs)
+                    self.interference[reg].remove(reg)
+                pass
         pass

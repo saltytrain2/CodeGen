@@ -21,6 +21,10 @@ class CFG(object):
         self.set_dominators()
         pass
     
+    def calc_interference(self) -> None:
+        for cfg in self.cfg_list:
+            cfg.calc_interference()
+            
     def set_dominators(self) -> None:
         for cfg in self.cfg_list:
             cfg.set_dominators()

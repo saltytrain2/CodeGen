@@ -1,7 +1,7 @@
 from __future__ import annotations
 from typing import List, Tuple
 from tacnodes import *
-from base_classes import BASE_CLASS_METHODS
+from coolbase import BASE_CLASS_METHODS
 
 
 class Tac(object):

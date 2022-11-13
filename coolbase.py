@@ -1,36 +1,6 @@
 from __future__ import annotations
 from tacnodes import *
 
-# BASE_FUNCS = {
-#     "IO.out_int" : """
-#     \t.text
-#     \t.globl IO.out_int
-#     IO.out_int:
-#     \tpushq\t%rbp
-#     \tmovq\t%rsp, %rbp
-#     \tsubq\t$24, %rsp
-#     \tmovq\t%rdi, -8(%rbp)
-#     \tmovq\t%rsi, -16(%rbp)
-#     \tleaq\t.LC0(%rip), %rdi
-#     \txor\t%eax, %eax
-#     \tcall\tprintf
-#     \tmovq\t-8(%rbp), %rdi
-#     \tmovq\t-16(%rbp), %rsi
-#     \tmovq\t%rbp, %rsp
-#     \tpopq\t%rbp
-#     \tret
-#     """,
-#     "IO.out_string" : """
-#     \t.text
-#     \t.globl IO.out_string
-#     IO.out_string:
-#     \tpushq\t%rbp
-#     \tmovq\t%rsp, %rbp
-#     \tsubq\t$24, %rsp
-#     \tmovq\t%rdi, -8(%rbp)
-#     """
-# }
-
 def _build_io_outint() -> TacFunc:
     tacregs = [TacReg(i) for i in range(10)]
     tacfunc = TacFunc("IO.out_int", [tacregs[0], tacregs[1]])
@@ -60,7 +30,7 @@ def _build_io_outint() -> TacFunc:
 
 
 def _build_io_outstring():
-    tacregs = [TacReg(i) for i in range(100)]
+    tacregs = [TacReg(i) for i in range(7)]
     tacfunc = TacFunc("IO.out_string", [tacregs[0], tacregs[1]])
 
     # store the parameters
@@ -80,10 +50,16 @@ def _build_io_outstring():
     return tacfunc
 
 
+# def _build_io_inint():
+#     tacregs = [TacReg(i) for i in range(100)]
+#     tacfunc = TacFunc("IO.in_int", )
+#     pass
+
+
 IO_FUNCS:List[TacFunc] = [
     _build_io_outint(),
     _build_io_outstring()
-    # _build_io_inint()
+    #_build_io_inint()
     # _build_io_instr()
 ]
 

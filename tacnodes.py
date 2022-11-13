@@ -129,6 +129,12 @@ class TacLabel(TacInst):
     def __repr__(self) -> str:
         return f"{self.num}:\n"
 
+    def get_live_regs(self) -> List[TacReg]:
+        return []
+
+    def get_dead_reg(self) -> TacReg:
+        return None
+
 
 class TacUnaryOp(TacInst):
     def __init__(self, op:TacOp, src:TacReg, dest:TacReg):
@@ -138,6 +144,12 @@ class TacUnaryOp(TacInst):
 
     def __repr__(self) -> str:
         return f"{repr(self.dest)} = {super().__repr__()} {repr(self.src)}\n"
+
+    def get_live_regs(self) -> List[TacReg]:
+        return [self.src]
+    
+    def get_dead_reg(self) -> TacReg:
+        return self.dest
 
 
 class TacBinOp(TacInst):
@@ -150,6 +162,12 @@ class TacBinOp(TacInst):
     def __repr__(self) -> str:
         return f"{repr(self.dest)} = {super().__repr__()} {repr(self.src1)} {repr(self.src2)}\n"
 
+    def get_live_regs(self) -> List[TacReg]:
+        return [self.src1, self.src2]
+
+    def get_dead_reg(self) -> TacReg:
+        return self.dest
+
 
 class TacAdd(TacBinOp):
     def __init__(self, src1:TacReg, src2:TacReg, dest:TacReg):
@@ -157,10 +175,6 @@ class TacAdd(TacBinOp):
 
     def __repr__(self) -> str:
         return super().__repr__()
-    
-    def gen_x86_unopt(self) -> str:
-
-        pass
 
 
 class TacSub(TacBinOp):
@@ -206,6 +220,12 @@ class TacBr(TacInst):
             labels.append(self.false_label)
 
         return labels
+    
+    def get_live_regs(self) -> List[TacReg]:
+        return [self.cond]
+
+    def get_dead_reg(self) -> TacReg:
+        return None
 
 
 class TacIcmp(TacInst):
@@ -218,6 +238,12 @@ class TacIcmp(TacInst):
     
     def __repr__(self) -> str:
         return f"{repr(self.dest)} = icmp {self.icmp_op.name.lower()} {repr(self.src1)} {repr(self.src2)}\n"
+    
+    def get_live_regs(self) -> List[TacReg]:
+        return [self.src1, self.src2]
+
+    def get_dead_reg(self) -> TacReg:
+        return self.dest
 
 
 class TacCall(TacInst):
@@ -231,6 +257,12 @@ class TacCall(TacInst):
         return f"{repr(self.dest)} = call {self.func}{str(self.args)}\n"
         raise NotImplementedError
 
+    def get_live_regs(self) -> List[TacReg]:
+        return self.args
+    
+    def get_dead_reg(self) -> TacReg:
+        return self.dest
+
 
 class TacRet(TacInst):
     def __init__(self, src:TacReg):
@@ -240,6 +272,12 @@ class TacRet(TacInst):
     def __repr__(self) -> str:
         return f"ret {repr(self.src)}\n"
         raise NotImplementedError
+
+    def get_live_regs(self) -> List[TacReg]:
+        return [self.src]
+
+    def get_dead_reg(self) -> TacReg:
+        return None
 
 
 class TacNot(TacUnaryOp):
@@ -273,6 +311,12 @@ class TacLoad(TacInst):
         offset_str = f"[{str(self.offset)}]" if self.offset is not None else ""
         return f"{repr(self.dest)} = load {repr(self.src)}{offset_str}\n"
 
+    def get_live_regs(self) -> List[TacReg]:
+        return [self.src]
+    
+    def get_dead_reg(self) -> TacReg:
+        return self.dest
+
 
 class TacStore(TacInst):
     def __init__(self, src:TacReg, dest:TacReg, offset:int=None):
@@ -285,6 +329,12 @@ class TacStore(TacInst):
         offset_str = f"[{str(self.offset)}]" if self.offset is not None else ""
         return f"store {repr(self.src)} {repr(self.dest)}{offset_str}\n"
 
+    def get_live_regs(self) -> List[TacReg]:
+        return self.src
+    
+    def get_dead_reg(self) -> TacReg:
+        return None
+
 
 class TacCreate(TacInst):
     def __init__(self, object:str, dest:TacReg):
@@ -294,6 +344,12 @@ class TacCreate(TacInst):
 
     def __repr__(self) -> str:
         return f"{repr(self.dest)} = create {self.object}\n"
+
+    def get_live_regs(self) -> List[TacReg]:
+        return None
+
+    def get_dead_reg(self) -> TacReg:
+        return self.dest
 
 
 class TacDeclare(TacInst):
@@ -305,6 +361,12 @@ class TacDeclare(TacInst):
     def __repr__(self) -> str:
         return f"{repr(self.dest)} = declare {self.object}\n"
 
+    def get_live_regs(self) -> List[TacReg]:
+        return None
+    
+    def get_dead_reg(self) -> TacReg:
+        return self.dest
+
 
 class TacSyscall(TacInst):
     def __init__(self, func:str, args:List[TacReg], dest:TacReg):
@@ -315,3 +377,9 @@ class TacSyscall(TacInst):
 
     def __repr__(self) -> str:
         return f"{repr(self.dest)} = call {self.func}{str(self.args)}\n"
+    
+    def get_live_regs(self) -> List[TacReg]:
+        return self.args
+
+    def get_dead_reg(self) -> TacReg:
+        return self.dest

@@ -7,12 +7,15 @@ def _build_io_outint() -> TacFunc:
 
     # store the parameters
     tacfunc.append(TacDeclare("SELF_TYPE", tacregs[2]))
+    tacregs[2].isstack = True
     tacfunc.append(TacStore(tacregs[0], tacregs[2]))
     tacfunc.append(TacDeclare("Int", tacregs[3]))
+    tacregs[3].isstack = True
     tacfunc.append(TacStore(tacregs[1], tacregs[3]))
 
     # create the format string
     tacfunc.append(TacDeclare("String", tacregs[4]))
+    tacregs[4].isstack = True
     tacfunc.append(TacCreate("String", tacregs[5]))
     tacfunc.append(TacStore(TacStr("%d"), tacregs[5], 3))
     tacfunc.append(TacStore(tacregs[5], tacregs[4]))
@@ -35,8 +38,10 @@ def _build_io_outstring():
 
     # store the parameters
     tacfunc.append(TacDeclare("SELF_TYPE", tacregs[2]))
+    tacregs[2].isstack = True
     tacfunc.append(TacStore(tacregs[0], tacregs[2]))
     tacfunc.append(TacDeclare("String", tacregs[3]))
+    tacregs[3].isstack = True
     tacfunc.append(TacStore(tacregs[1], tacregs[3]))
 
     # load the string and print
@@ -50,45 +55,88 @@ def _build_io_outstring():
     return tacfunc
 
 
-# def _build_io_inint():
-#     tacregs = [TacReg(i) for i in range(100)]
-#     tacfunc = TacFunc("IO.in_int", )
-#     pass
+def _build_io_inint():
+    tacregs = [TacReg(i) for i in range(2)]
+    tacfunc = TacFunc("IO.in_int", [tacregs[0], tacregs[1]])
+
+    tacfunc.append(TacRet(TacImm(0)))
+    return tacfunc
+
+
+def _build_io_instring():
+    tacregs = [TacReg(i) for i in range(2)]
+    tacfunc = TacFunc("IO.in_string", [tacregs[0], tacregs[1]])
+
+    tacfunc.append(TacRet(TacImm(0)))
+    return tacfunc
+
+def _build_object_abort():
+    tacregs = [TacReg(i) for i in range(2)]
+    tacfunc = TacFunc("IO.in_string", [tacregs[0], tacregs[1]])
+
+    tacfunc.append(TacRet(TacImm(0)))
+    return tacfunc
+
+def _build_object_typename():
+    tacregs = [TacReg(i) for i in range(2)]
+    tacfunc = TacFunc("IO.in_string", [tacregs[0], tacregs[1]])
+
+    tacfunc.append(TacRet(TacImm(0)))
+    return tacfunc
+
+def _build_object_copy():
+    tacregs = [TacReg(i) for i in range(2)]
+    tacfunc = TacFunc("IO.in_string", [tacregs[0], tacregs[1]])
+
+    tacfunc.append(TacRet(TacImm(0)))
+    return tacfunc
+
+
+def _build_string_concat():
+    tacregs = [TacReg(i) for i in range(2)]
+    tacfunc = TacFunc("IO.in_string", [tacregs[0], tacregs[1]])
+
+    tacfunc.append(TacRet(TacImm(0)))
+    return tacfunc
+
+
+def _build_string_length():
+    tacregs = [TacReg(i) for i in range(2)]
+    tacfunc = TacFunc("IO.in_string", [tacregs[0], tacregs[1]])
+
+    tacfunc.append(TacRet(TacImm(0)))
+    return tacfunc
+
+
+def _build_string_substr():
+    tacregs = [TacReg(i) for i in range(2)]
+    tacfunc = TacFunc("IO.in_string", [tacregs[0], tacregs[1]])
+
+    tacfunc.append(TacRet(TacImm(0)))
+    return tacfunc
 
 
 IO_FUNCS:List[TacFunc] = [
+    _build_io_inint(),
+    _build_io_instring(),
     _build_io_outint(),
     _build_io_outstring()
-    #_build_io_inint()
-    # _build_io_instr()
 ]
 
 OBJECT_FUNCS:List[TacFunc] = [
-    # _build_io_outint()
-    # _build_io_outstring()
-    # _build_io_inint()
-    # _build_io_outint()
+    _build_object_abort(),
+    _build_object_copy(),
+    _build_object_typename()
 ]
 
-INT_FUNCS:List[TacFunc] = [
-    # _build_io_outint()
-    # _build_io_outstring()
-    # _build_io_inint()
-    # _build_io_outint()
-]
+INT_FUNCS:List[TacFunc] = []
 
-BOOL_FUNCS:List[TacFunc] = [
-    # _build_io_outint()
-    # _build_io_outstring()
-    # _build_io_inint()
-    # _build_io_outint()
-]
+BOOL_FUNCS:List[TacFunc] = []
 
 STRING_FUNCS:List[TacFunc] = [
-    # _build_io_outint()
-    # _build_io_outstring()
-    # _build_io_inint()
-    # _build_io_outint()
+    _build_string_concat(),
+    _build_string_length(),
+    _build_string_substr(),
 ]
 
 

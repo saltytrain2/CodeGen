@@ -53,8 +53,8 @@ class Tac(object):
             
             self.attr_table.clear()
 
-    def create_reg(self) -> TacReg:
-        temp = TacReg(self.num)
+    def create_reg(self, isstack:bool=False) -> TacReg:
+        temp = TacReg(self.num, isstack)
         self.num += 1
         return temp
     
@@ -66,7 +66,7 @@ class Tac(object):
     def tacgen_constructor(self, c:str):
         temp_num = self.num
         self.cur_tacfunc = TacFunc(f"{c}..new", None)
-        obj_reg = self.create_reg()
+        obj_reg = self.create_reg(True)
         temp_reg = self.create_reg()
         size = 8 * len(self.class_map[c]) + 24
         self.cur_tacfunc.append(TacDeclare(c, obj_reg))
@@ -106,7 +106,7 @@ class Tac(object):
 
         for i, param in enumerate(params):
             name = param_names[i]
-            local_reg = self.create_reg()
+            local_reg = self.create_reg(True)
             self.cur_tacfunc.append(TacDeclare(name, local_reg))
             self.cur_tacfunc.append(TacStore(param, local_reg))
             self.symbol_table[name].append(local_reg)
@@ -124,7 +124,7 @@ class Tac(object):
         if isinstance(exp, Binop):
             lhs_reg = self.tacgen_exp(exp.lhs)
             rhs_reg = self.tacgen_exp(exp.rhs)
-            ret_reg = self.create_reg()
+            ret_reg = self.create_reg(True)
             temp_reg = self.create_reg()
             if isinstance(exp, (Plus, Minus, Times, Divide)):
                 self.cur_tacfunc.append(TacDeclare("Int", ret_reg))
@@ -168,7 +168,7 @@ class Tac(object):
                 self.cur_tacfunc.append(TacStore(temp_reg, ret_reg))
             return ret_reg
         elif isinstance(exp, Integer):
-            ret_reg = self.create_reg()
+            ret_reg = self.create_reg(True)
             int_reg = self.create_reg()
             self.cur_tacfunc.append(TacDeclare("Int", ret_reg))
             self.cur_tacfunc.append(TacCreate("Int", int_reg))
@@ -176,7 +176,7 @@ class Tac(object):
             self.cur_tacfunc.append(TacStore(int_reg, ret_reg))
             return ret_reg
         elif isinstance(exp, StringExp):
-            ret_reg = self.create_reg()
+            ret_reg = self.create_reg(True)
             str_reg = self.create_reg()
             self.cur_tacfunc.append(TacDeclare("String", ret_reg))
             self.cur_tacfunc.append(TacCreate("String", str_reg))
@@ -184,7 +184,7 @@ class Tac(object):
             self.cur_tacfunc.append(TacStore(str_reg, ret_reg))
             return ret_reg
         elif isinstance(exp, Bool):
-            ret_reg = self.create_reg()
+            ret_reg = self.create_reg(True)
             bool_reg = self.create_reg()
             self.cur_tacfunc.append(TacDeclare("Bool", ret_reg))
             self.cur_tacfunc.append(TacCreate("Bool", bool_reg))
@@ -227,7 +227,7 @@ class Tac(object):
             true_label = self.create_label()
             false_label = self.create_label()
             end_label = self.create_label()
-            res_reg = self.create_reg()
+            res_reg = self.create_reg(True)
             self.cur_tacfunc.append(TacDeclare(exp.exp_type, res_reg))
             cond_reg = self.tacgen_exp(exp.condition)
             self.cur_tacfunc.append(TacBr(cond_reg, true_label, false_label))
@@ -261,7 +261,7 @@ class Tac(object):
 
             self.cur_tacfunc.append(while_end)
             ret_reg = self.create_reg()
-            self.cur_tacfunc.append(TacDeclare("Object", ret_reg))
+            self.cur_tacfunc.append(TacLoad(TacImm(0), ret_reg))
             return ret_reg
         elif isinstance(exp, Block):
             for expr in exp.body:
@@ -279,7 +279,7 @@ class Tac(object):
         elif isinstance(exp, Let):
             # adding additional registers into the symbol table
             for let_binding in exp.binding_list:
-                binding_reg = self.create_reg()
+                binding_reg = self.create_reg(True)
                 self.symbol_table[let_binding.var.name].append(binding_reg)
                 self.cur_tacfunc.append(TacDeclare(let_binding.var_type.name, binding_reg))
                 if let_binding.has_init():
@@ -298,7 +298,7 @@ class Tac(object):
             case_labels = [self.create_label() for _ in exp.case_list]
             error_label = self.create_label()
             case_end = self.create_label()
-            ret_reg = self.create_reg()
+            ret_reg = self.create_reg(True)
             self.cur_tacfunc.append(TacDeclare(exp.exp_type, ret_reg))
             cur_obj = self.tacgen_exp(exp.case_expr)
 

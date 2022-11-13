@@ -17,6 +17,7 @@ def main(argv):
     tacfuncs = tac.get_tacfuncs()
     cfg = CFG(tacfuncs)
     cfg.optimize()
+    cfg.alloc_regs()
     cfg.debug_cfg()
     #cfg.build_interference_graph()
 

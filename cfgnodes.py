@@ -44,7 +44,7 @@ class CFGBlock(object):
         for inst in self.inst_list:
             str_list.append(repr(inst))
         
-        return "".join(str_list)
+        return "".join(str_list) + "\n"
     
     def calc_liveness(self, out_set=None) -> bool:
         changed = False
@@ -141,5 +141,21 @@ class CFGFunc(object):
             cur_block = work_list.popleft()
             visited_blocks.add(cur_block)
 
-            
+
             pass
+
+    def precolor_regs(self) -> None:
+        # some registers are forced due to the calling convention
+        offset = 0
+        for cfg_block in self.cfg_blocks:
+            for inst in cfg_block.inst_list:
+                # call instructions always return values in rax/eax
+                if isinstance(inst, (TacCreate, TacCall, TacSyscall)):
+                    inst.dest.set_preg(PReg("rax"))
+                
+                # declared variables on stack will always be stored in rbp - offset
+                if isinstance(inst, TacDeclare):
+                    inst.dest.set_preg(PReg("rbp", offset))
+                    offset -= 8
+            pass
+        pass

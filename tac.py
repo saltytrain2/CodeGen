@@ -1,6 +1,7 @@
 from __future__ import annotations
 from typing import List, Tuple
 from tacnodes import *
+from base_classes import BASE_CLASS_METHODS
 
 
 class Tac(object):
@@ -35,6 +36,10 @@ class Tac(object):
 
     def tacgen(self) -> None:
         for c in self.impl_map:
+            if c in {"Object", "Bool", "String", "Int", "IO"}:
+                self.processed_funcs.extend(BASE_CLASS_METHODS[c])
+                continue
+
             offset = 3
             for attr in self.class_map[c]:
                 self.attr_table[attr.get_name()] = offset
@@ -42,7 +47,7 @@ class Tac(object):
 
             self.tacgen_constructor(c)
             for method in self.impl_map[c]:
-                if method.parent != c or c in {"Object", "Bool", "String", "Int", "IO"}:
+                if method.parent != c:
                     continue
                 self.tacgen_func(method)
             
@@ -65,7 +70,7 @@ class Tac(object):
         temp_reg = self.create_reg()
         size = 8 * len(self.class_map[c]) + 24
         self.cur_tacfunc.append(TacDeclare(c, obj_reg))
-        self.cur_tacfunc.append(TacCall("malloc", [TacImm(size)], temp_reg))
+        self.cur_tacfunc.append(TacSyscall("malloc", [TacImm(size)], temp_reg))
         self.cur_tacfunc.append(TacStore(temp_reg, obj_reg))
 
         # store class_tag, obj_size, and vtable

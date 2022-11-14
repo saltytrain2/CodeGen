@@ -3,6 +3,7 @@ from tacnodes import *
 from collections import deque
 from typing import Deque
 import networkx as nx
+from heapq import heappush, heappop
 
 
 class CFGBlock(object):
@@ -64,6 +65,33 @@ class CFGBlock(object):
         return changed
 
 
+class RegisterAllocator(object):
+    def __init__(self):
+        self.caller_saved:List[str] = ["rdi", "rsi", "rdx", "rcx", "r8", "r9"]
+        self.callee_saved:List[str] = ["rbx", "r12", "r13", "r14", "r15"]
+        self.return_reg:str = "rax"
+        self.off_limits:List[str] = ["rsp", "rbp"]
+        self.reset()
+    
+    def dealloc_reg(self, reg:str) -> None:
+        self.available_regs.append(reg)
+        self.used_regs.remove(reg)
+    
+    def isFull(self) -> bool:
+        return not self.available_regs
+    
+    def alloc_reg(self) -> str:
+        if not self.available_regs:
+            return None
+        
+        reg = self.available_regs.pop()
+        self.used_regs.add(reg)
+        return reg
+    
+    def reset(self) -> None:
+        self.used_regs = set()
+        self.available_regs = self.caller_saved + self.callee_saved
+
 
 class CFGFunc(object):
     def __init__(self, func:TacFunc):
@@ -72,6 +100,7 @@ class CFGFunc(object):
         self.cfg_map:Dict[str, CFGBlock] = defaultdict(CFGBlock, name="")
         self.cfg_blocks:List[CFGBlock] = []
         self.interference:Dict[TacReg, Set[TacReg]] = defaultdict(set)
+        self.reg_allocator:RegisterAllocator = RegisterAllocator()
         self.process_func(func)
     
     def process_func(self, func:TacFunc) -> None:
@@ -125,30 +154,26 @@ class CFGFunc(object):
                 changed = True if prev_dominators != cfg_block.dominators else changed
 
     def alloc_regs(self) -> None:
-        used_regs:Dict[PReg, TacReg] = defaultdict(TacReg, num=-1)
-        visited_blocks:Set[CFGBlock] = set()
-        work_list:Deque[CFGBlock] = deque()
-        work_list.append(self.cfg_map["entry"])
-
-        while work_list:
-            cur_block = work_list.popleft()
-            visited_blocks.add(cur_block)
-            pass
+        self.linear_scan_alloc()
 
     def precolor_regs(self) -> None:
         # some registers are forced due to the calling convention
         offset = 0
-        for cfg_block in self.cfg_blocks:
-            for inst in cfg_block.inst_list:
-                # call instructions always return values in rax/eax
-                if isinstance(inst, (TacCreate, TacCall, TacSyscall)):
-                    inst.dest.set_preg(PReg("rax"))
-                
-                # declared variables on stack will always be stored in rbp - offset
-                if isinstance(inst, TacDeclare):
-                    inst.dest.set_preg(PReg("rbp", offset))
-                    offset -= 8
-            pass
+        param_regs = ["rdi", "rsi", "rdx", "rcx", "r8", "r9"]
+        for i, param in enumerate(self.params):
+            if i < 7:
+                param.set_preg(PReg(param_regs[i]))
+            else:
+                param.set_preg(PReg("rbp", offset))
+                offset += 8
+
+        offset = 8
+        for inst in self.cfg_blocks[-1].inst_list:
+            # declared variables on stack will always be stored in rbp - offset
+            if not isinstance(inst, TacDeclare):
+                break
+            inst.dest.set_preg(PReg("rbp", offset))
+            offset -= 8
         pass
 
     def calc_interference(self) -> None:
@@ -177,3 +202,14 @@ class CFGFunc(object):
         for reg, reg_set in self.interference.items():
             print(f"{reg}: {reg_set if reg_set else ''}")
         pass
+
+    def linear_scan_alloc(self) -> None:
+        def expire_old_intervals(active:List[int], start:int):
+            while active[0] > start:
+                heappop(active)
+            self.reg_allocator.dealloc_reg()
+
+        def spill_at_interval():
+            pass
+        
+        #for inst in self.

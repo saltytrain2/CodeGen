@@ -36,7 +36,7 @@ class CFG(object):
 
     def alloc_regs(self) -> None:
         for cfg in self.cfg_list:
-            # cfg.precolor_regs()
+            cfg.precolor_regs()
             cfg.alloc_regs()
         pass
 

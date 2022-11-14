@@ -81,6 +81,8 @@ class TacReg(TacValue):
     def __init__(self, num:int, isstack:bool=False):
         self.num = num
         self.isstack = isstack
+        self.live_start = None
+        self.live_end = None
 
     def __repr__(self) -> str:
         return "%" + str(self.num)
@@ -93,6 +95,12 @@ class TacReg(TacValue):
     
     def __hash__(self) -> int:
         return hash(self.num)
+
+    def set_live_start(self, start:int) -> None:
+        self.live_start = start
+    
+    def set_live_end(self, end:int) -> None:
+        self.live_end = end
 
 
 class TacImm(TacValue):

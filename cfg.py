@@ -1,5 +1,6 @@
 from __future__ import annotations
 from cfgnodes import *
+import networkx as nx
 
 class CFG(object):
     def __init__(self, tacfuncs:List[TacFunc]):
@@ -16,6 +17,10 @@ class CFG(object):
     def debug_cfg(self) -> None:
         for cfg_func in self.cfg_list:
             print(repr(cfg_func))
+            #cfg_func.print_interference()
+    
+    def debug_interference(self) -> None:
+        pass
     
     def optimize(self) -> None:
         self.set_dominators()
@@ -24,7 +29,7 @@ class CFG(object):
     def calc_interference(self) -> None:
         for cfg in self.cfg_list:
             cfg.calc_interference()
-            
+
     def set_dominators(self) -> None:
         for cfg in self.cfg_list:
             cfg.set_dominators()

@@ -2,6 +2,7 @@ from __future__ import annotations
 from tacnodes import *
 from collections import deque
 from typing import Deque
+import networkx as nx
 
 
 class CFGBlock(object):
@@ -27,8 +28,9 @@ class CFGBlock(object):
         last_inst = self.inst_list[-1]
         if isinstance(last_inst, TacBr):
             return last_inst.get_branch_targets()
-        elif isinstance(last_inst, TacRet):
+        elif isinstance(last_inst, (TacRet, TacUnreachable)):
             return []
+
         # error case
         raise Exception("last instruction is not a terminator")
     
@@ -169,4 +171,9 @@ class CFGFunc(object):
                     self.interference[reg].update(live_regs)
                     self.interference[reg].remove(reg)
                 pass
+        pass
+
+    def print_interference(self) -> None:
+        for reg, reg_set in self.interference.items():
+            print(f"{reg}: {reg_set if reg_set else ''}")
         pass

@@ -11,8 +11,8 @@ def main(argv):
     with open(cl_type_file, 'r') as file:
         ast_lines = [line.rstrip("\n\r") for line in reversed(file.readlines())]
 
-    class_map, impl_map, parent_map, class_list = read_ast(ast_lines)
-    tac = Tac(class_map, impl_map, parent_map, class_list)
+    class_map, impl_map, parent_map, _ = read_ast(ast_lines)
+    tac = Tac(class_map, impl_map, parent_map)
     tac.tacgen()
     tacfuncs = tac.get_tacfuncs()
     cfg = CFG(tacfuncs)

@@ -13,7 +13,7 @@ class Tac(object):
     attr_table:Dict[str, int] = defaultdict(int)
 
     def __init__(self, class_map:List[ClassMapEntry], impl_map:List[ImplMapEntry],
-            parent_map:List[ParentMapEntry], ast:List[Class]):
+            parent_map:List[ParentMapEntry]):
         count = 0
         for entry in class_map:
             self.class_map[entry.class_name] = entry.attr_list
@@ -26,7 +26,7 @@ class Tac(object):
         for entry in parent_map:
             self.parent_map[entry.child] = entry.parent
 
-        self.ast = ast
+        self.declaration_map:Dict[Expression, TacReg] = defaultdict(TacReg, num=-1)
         self.processed_funcs:List[TacFunc] = []
         self.cur_tacfunc = None
         self.num = 0
@@ -92,6 +92,7 @@ class Tac(object):
 
         self.processed_funcs.append(self.cur_tacfunc)
         self.num = temp_num
+        self.declaration_map.clear()
 
     def tacgen_func(self, method:ImplMethod) -> None:
         temp_num = self.num
@@ -103,13 +104,16 @@ class Tac(object):
             param_names.append(param)
 
         self.cur_tacfunc = TacFunc(f"{method.parent}.{method.get_name()}", params)
+        self.create_stack_vars(method.expr)
 
+        local_regs = [self.create_reg(True) for _ in params]
         for i, param in enumerate(params):
             name = param_names[i]
-            local_reg = self.create_reg(True)
-            self.cur_tacfunc.append(TacDeclare(name, local_reg))
-            self.cur_tacfunc.append(TacStore(param, local_reg))
-            self.symbol_table[name].append(local_reg)
+            self.cur_tacfunc.append(TacDeclare(name, local_regs[i]))
+            self.symbol_table[name].append(local_regs[i])
+
+        for i, param in enumerate(params):
+            self.cur_tacfunc.append(TacStore(param, local_regs[i]))
 
         ret_reg = self.tacgen_exp(method.expr)
         self.cur_tacfunc.append(TacRet(ret_reg))
@@ -119,21 +123,75 @@ class Tac(object):
             self.symbol_table[param_name].pop()
 
         self.num = temp_num
+        self.declaration_map.clear()
+
+    def create_let_stack_vars(self, binding:LetBinding):
+        self.declaration_map[binding] = self.create_reg(True)
+        self.cur_tacfunc.append(TacDeclare(binding.var_type.name, self.declaration_map[binding]))
+        self.create_stack_vars(binding.val)
+
+    def create_case_stack_vars(self, case_elem:CaseElement):
+        self.declaration_map[case_elem] = self.create_reg(True)
+        self.cur_tacfunc.append(TacDeclare(case_elem.get_type(), self.declaration_map[case_elem]))
+        self.create_stack_vars(case_elem.expr)
+        pass
+
+    def create_stack_vars(self, exp:Expression) -> None:
+        if exp is None:
+            return
+
+        if isinstance(exp, Binop):
+            self.create_stack_vars(exp.lhs)
+            self.create_stack_vars(exp.rhs)
+        elif isinstance(exp, UnaryOp):
+            self.create_stack_vars(exp.rhs)
+        elif isinstance(exp, Block):
+            for expr in exp.body:
+                self.create_stack_vars(expr)
+        elif isinstance(exp, If):
+            self.create_stack_vars(exp.condition)
+            self.create_stack_vars(exp.then_body)
+            self.create_stack_vars(exp.else_body)
+        elif isinstance(exp, While):
+            self.create_stack_vars(exp.condition)
+            self.create_stack_vars(exp.while_body)
+        elif isinstance(exp, Let):
+            for binding in exp.binding_list:
+                self.create_let_stack_vars(binding)
+            self.create_stack_vars(exp.expr)
+        elif isinstance(exp, Case):
+            self.create_stack_vars(exp.case_expr)
+            for case_elem in exp.case_list:
+                self.create_case_stack_vars(case_elem)
+        elif isinstance(exp, Dispatch):
+            self.create_stack_vars(exp.obj)
+            for arg in exp.args:
+                self.create_stack_vars(arg)
+        elif isinstance(exp, Assign):
+            self.create_stack_vars(exp.rhs)
+        
+        if not isinstance(exp, (Variable, Assign)):
+            self.declaration_map[exp] = self.create_reg(True)
+            self.cur_tacfunc.append(TacDeclare(exp.exp_type, self.declaration_map[exp]))
 
     def tacgen_exp(self, exp:Expression) -> TacReg:
         if isinstance(exp, Binop):
             lhs_reg = self.tacgen_exp(exp.lhs)
             rhs_reg = self.tacgen_exp(exp.rhs)
-            ret_reg = self.create_reg(True)
+            #ret_reg = self.create_reg(True)
             temp_reg = self.create_reg()
             if isinstance(exp, (Plus, Minus, Times, Divide)):
-                self.cur_tacfunc.append(TacDeclare("Int", ret_reg))
+                #self.cur_tacfunc.append(TacDeclare("Int", ret_reg))
                 self.cur_tacfunc.append(TacCreate("Int", temp_reg))
+                lhs_base = self.create_reg()
                 lhs_prim = self.create_reg()
+                self.cur_tacfunc.append(TacLoad(lhs_reg, lhs_base))
+                self.cur_tacfunc.append(TacLoad(lhs_base, lhs_prim, 3))
+                rhs_base = self.create_reg()
                 rhs_prim = self.create_reg()
+                self.cur_tacfunc.append(TacLoad(rhs_reg, rhs_base))
+                self.cur_tacfunc.append(TacLoad(rhs_base, rhs_prim, 3))
                 res_reg = self.create_reg()
-                self.cur_tacfunc.append(TacLoad(lhs_reg, lhs_prim, 3))
-                self.cur_tacfunc.append(TacLoad(rhs_reg, rhs_prim, 3))
                 if isinstance(exp, Plus):
                     self.cur_tacfunc.append(TacAdd(lhs_prim, rhs_prim, res_reg))
                 elif isinstance(exp, Minus):
@@ -141,11 +199,22 @@ class Tac(object):
                 elif isinstance(exp, Times):
                     self.cur_tacfunc.append(TacMul(lhs_prim, rhs_prim, res_reg))
                 elif isinstance(exp, Divide):
+                    cmp_zero = self.create_reg()
+                    self.cur_tacfunc.append(TacIcmp(TacCmpOp.EQ, TacImm(0), rhs_prim, cmp_zero))
+                    true_label = self.create_label()
+                    false_label = self.create_label()
+                    self.cur_tacfunc.append(TacBr(cmp_zero, true_label, false_label))
+                    self.cur_tacfunc.append(true_label)
+                    error_str = self.create_reg()
+                    self.cur_tacfunc.append(TacStore(TacStr(f"ERROR: {exp.lineno}: division by zero\n"), error_str))
+                    self.cur_tacfunc.append(TacSyscall("printf@PLT", [error_str], self.create_reg()))
+                    self.cur_tacfunc.append(TacSyscall("exit@PLT", [TacImm(1)], self.create_reg()))
+                    self.cur_tacfunc.append(TacUnreachable())
+                    self.cur_tacfunc.append(false_label)
                     self.cur_tacfunc.append(TacDiv(lhs_prim, rhs_prim, res_reg))
                 self.cur_tacfunc.append(TacStore(res_reg, temp_reg, 3))
-                self.cur_tacfunc.append(TacStore(temp_reg, ret_reg))
+                self.cur_tacfunc.append(TacStore(temp_reg, self.declaration_map[exp]))
             else:
-                self.cur_tacfunc.append(TacDeclare("Bool", ret_reg))
                 self.cur_tacfunc.append(TacCreate("Bool", temp_reg))
                 lhs_val = self.create_reg()
                 rhs_val = self.create_reg()
@@ -165,32 +234,26 @@ class Tac(object):
                     self.cur_tacfunc.append(TacIcmp(TacCmpOp.EQ, lhs_reg, rhs_reg, res_reg))
                 
                 self.cur_tacfunc.append(TacStore(res_reg, temp_reg, 3))
-                self.cur_tacfunc.append(TacStore(temp_reg, ret_reg))
-            return ret_reg
+                self.cur_tacfunc.append(TacStore(temp_reg, self.declaration_map[exp]))
+            return self.declaration_map[exp]
         elif isinstance(exp, Integer):
-            ret_reg = self.create_reg(True)
             int_reg = self.create_reg()
-            self.cur_tacfunc.append(TacDeclare("Int", ret_reg))
             self.cur_tacfunc.append(TacCreate("Int", int_reg))
             self.cur_tacfunc.append(TacStore(TacImm(int(exp.val)), int_reg, 3))
-            self.cur_tacfunc.append(TacStore(int_reg, ret_reg))
-            return ret_reg
+            self.cur_tacfunc.append(TacStore(int_reg, self.declaration_map[exp]))
+            return self.declaration_map[exp]
         elif isinstance(exp, StringExp):
-            ret_reg = self.create_reg(True)
             str_reg = self.create_reg()
-            self.cur_tacfunc.append(TacDeclare("String", ret_reg))
             self.cur_tacfunc.append(TacCreate("String", str_reg))
-            self.cur_tacfunc.append(TacStore(TacStr(exp.val), str_reg, 3))
-            self.cur_tacfunc.append(TacStore(str_reg, ret_reg))
-            return ret_reg
+            self.cur_tacfunc.append(TacStore(TacStr(exp.val), str_reg))
+            self.cur_tacfunc.append(TacStore(str_reg, self.declaration_map[exp]))
+            return self.declaration_map[exp]
         elif isinstance(exp, Bool):
-            ret_reg = self.create_reg(True)
             bool_reg = self.create_reg()
-            self.cur_tacfunc.append(TacDeclare("Bool", ret_reg))
             self.cur_tacfunc.append(TacCreate("Bool", bool_reg))
             self.cur_tacfunc.append(TacStore(TacImm(1 if exp.kind == "true" else 0), bool_reg, 3))
-            self.cur_tacfunc.append(TacStore(bool_reg, ret_reg))
-            return ret_reg
+            self.cur_tacfunc.append(TacStore(bool_reg, self.declaration_map[exp]))
+            return self.declaration_map[exp]
         elif isinstance(exp, Dispatch):
             obj_reg = self.tacgen_exp(exp.obj) if exp.obj is not None else self.self_reg()
             param_regs = [obj_reg]
@@ -200,19 +263,19 @@ class Tac(object):
             ret_reg = self.create_reg()
             func_str = f"{exp.class_type.name}.{exp.get_func_name()}" if exp.class_type is not None else exp.get_func_name()
             self.cur_tacfunc.append(TacCall(func_str, param_regs, ret_reg))
-            return ret_reg
+            self.cur_tacfunc.append(TacStore(ret_reg, self.declaration_map[exp]))
+            return self.declaration_map[exp]
         elif isinstance(exp, Variable):
             var_name = exp.var.name
-            attr_reg = self.create_reg()
-            if var_name in self.symbol_table:
-                self.cur_tacfunc.append(TacLoad(self.symbol_table[var_name][-1], attr_reg))
-            else:
-                self.cur_tacfunc.append(TacLoad(self.self_reg(), attr_reg, self.attr_table[var_name]))
-            return attr_reg
+            if self.symbol_table[var_name]:
+                return self.symbol_table[var_name][-1]
+
+            return self.attr_table[var_name]
         elif isinstance(exp, New):
             dest_reg = self.create_reg()
             self.cur_tacfunc.append(TacCreate(exp.class_name.get_name(), dest_reg))
-            return dest_reg
+            self.cur_tacfunc.append(TacStore(dest_reg, self.declaration_map[exp]))
+            return self.declaration_map[exp]
         elif isinstance(exp, UnaryOp):
             rhs_reg = self.tacgen_exp(exp.rhs)
             dest_reg = self.create_reg()
@@ -222,30 +285,27 @@ class Tac(object):
                 self.cur_tacfunc.append(TacNot(rhs_reg, dest_reg))
             else:
                 self.cur_tacfunc.append(TacIcmp(TacCmpOp.EQ, rhs_reg, TacImm(0), dest_reg))
-            return dest_reg
+            self.cur_tacfunc.append(TacStore(dest_reg, self.declaration_map[exp]))
+            return self.declaration_map[exp]
         elif isinstance(exp, If):
             true_label = self.create_label()
             false_label = self.create_label()
             end_label = self.create_label()
-            res_reg = self.create_reg(True)
-            self.cur_tacfunc.append(TacDeclare(exp.exp_type, res_reg))
             cond_reg = self.tacgen_exp(exp.condition)
             self.cur_tacfunc.append(TacBr(cond_reg, true_label, false_label))
 
             self.cur_tacfunc.append(true_label)
             then_reg = self.tacgen_exp(exp.then_body)
-            self.cur_tacfunc.append(TacStore(then_reg, res_reg))
+            self.cur_tacfunc.append(TacStore(then_reg, self.declaration_map[exp]))
             self.cur_tacfunc.append(TacBr(true_label=end_label))
 
             self.cur_tacfunc.append(false_label)
             else_reg = self.tacgen_exp(exp.else_body)
-            self.cur_tacfunc.append(TacStore(else_reg, res_reg))
+            self.cur_tacfunc.append(TacStore(else_reg, self.declaration_map[exp]))
             self.cur_tacfunc.append(TacBr(true_label=end_label))
             self.cur_tacfunc.append(end_label)
 
-            ret_reg = self.create_reg()
-            self.cur_tacfunc.append(TacLoad(res_reg, ret_reg))
-            return ret_reg
+            return self.declaration_map[exp]
         elif isinstance(exp, While):
             while_start = self.create_label()
             while_body = self.create_label()
@@ -260,31 +320,31 @@ class Tac(object):
             self.cur_tacfunc.append(TacBr(true_label=while_start))
 
             self.cur_tacfunc.append(while_end)
-            ret_reg = self.create_reg()
-            self.cur_tacfunc.append(TacLoad(TacImm(0), ret_reg))
-            return ret_reg
+            return self.declaration_map[exp]
         elif isinstance(exp, Block):
+            #TODO this is probably wrong
             for expr in exp.body:
                 ret_reg = self.tacgen_exp(expr)
             return ret_reg
         elif isinstance(exp, Assign):
             rhs_reg = self.tacgen_exp(exp.rhs)
+            temp_reg = self.create_reg()
+            self.cur_tacfunc.append(TacLoad(rhs_reg, temp_reg))
 
-            if self.attr_table[exp.lhs.name]:
-                self.cur_tacfunc.append(TacStore(rhs_reg, self.self_reg(), self.attr_table[exp.lhs.name]))
-                return self.self_reg()
-
-            self.cur_tacfunc.append(TacStore(rhs_reg, self.symbol_table[exp.lhs.name][-1]))
-            return self.symbol_table[exp.lhs.name][-1]
+            if self.symbol_table[exp.lhs.name]:
+                self.cur_tacfunc.append(TacStore(temp_reg, self.symbol_table[exp.lhs.name][-1]))
+                return self.symbol_table[exp.lhs.name][-1]
+            
+            self.cur_tacfunc.append(TacStore(temp_reg, self.attr_table[exp.lhs.name]))
+            return self.attr_table[exp.lhs.name]
         elif isinstance(exp, Let):
             # adding additional registers into the symbol table
             for let_binding in exp.binding_list:
-                binding_reg = self.create_reg(True)
-                self.symbol_table[let_binding.var.name].append(binding_reg)
-                self.cur_tacfunc.append(TacDeclare(let_binding.var_type.name, binding_reg))
+                binding_name = let_binding.var.name
+                self.symbol_table[binding_name].append(self.declaration_map[let_binding])
                 if let_binding.has_init():
                     init_res = self.tacgen_exp(let_binding.val)
-                    self.cur_tacfunc.append(TacStore(init_res, binding_reg))
+                    self.cur_tacfunc.append(TacStore(init_res, self.declaration_map[let_binding]))
             
             ret_reg = self.tacgen_exp(exp.expr)
 

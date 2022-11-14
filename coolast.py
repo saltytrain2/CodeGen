@@ -293,7 +293,6 @@ class StringExp(Expression):
     def __repr__(self) -> str:
         return super().__repr__() + f"{self.val}\n"
 
-
 class New(Expression):
     def __init__(self, lineno:str, class_name:Identifier, exp_type:str=None):
         super().__init__(lineno, 'new', exp_type)

@@ -24,12 +24,15 @@ class TacOp(Enum):
     CREATE = auto()
     LABEL = auto()
     SYSCALL = auto()
+    GEP = auto()
+    UNREACHABLE = auto()
 
 
 class TacCmpOp(Enum):
     EQ = auto()
     LE = auto()
     LT = auto()
+    NE = auto()
 
 
 class TacFunc:
@@ -145,7 +148,7 @@ class TacUnaryOp(TacInst):
 
     def __repr__(self) -> str:
         inst_str = f"{repr(self.dest)} = {super().__repr__()} {repr(self.src)}"
-        return f"{inst_str:<50} ;live: {repr(self.live) if self.live else ''}\n"
+        return f"{inst_str:<50} ; live: {repr(self.live) if self.live else ''}\n"
 
 
 class TacBinOp(TacInst):
@@ -194,14 +197,14 @@ class TacDiv(TacBinOp):
 
 class TacBr(TacInst):
     def __init__(self, cond:TacReg=None, true_label:TacLabel=None, false_label:TacLabel=None):
-        super().__init__(TacOp.BR, {self.cond}, None)
+        super().__init__(TacOp.BR, {cond}, None)
         self.cond = cond
         self.true_label = true_label
         self.false_label = false_label
 
     def __repr__(self) -> str:
         if self.cond is None:
-            inst_str = f"br label %{self.true_label.num}\n"
+            inst_str = f"br label %{self.true_label.num}"
         else:
             inst_str = f"br {repr(self.cond)} label %{self.true_label.num} label %{self.false_label.num}"
 
@@ -287,7 +290,7 @@ class TacLoad(TacInst):
 
 class TacStore(TacInst):
     def __init__(self, src:TacReg, dest:TacReg, offset:int=None):
-        super().__init__(TacOp.STORE, {src}, None)
+        super().__init__(TacOp.STORE, {src, dest}, None)
         self.src = src
         self.dest = dest
         self.offset = offset
@@ -330,3 +333,23 @@ class TacSyscall(TacInst):
     def __repr__(self) -> str:
         inst_str = f"{repr(self.dest)} = syscall {self.func}({', '.join(repr(arg) for arg in self.args)})"
         return f"{inst_str:<50} ; live: {repr(self.live) if self.live else ''}\n"
+
+
+class TacGep(TacInst):
+    def __init__(self, src:TacReg, dest:TacReg, offset:int):
+        super().__init__(TacOp.GEP, {src}, {dest})
+        self.src = src
+        self.dest = dest
+        self.offset = offset
+    
+    def __repr__(self) -> str:
+        inst_str = f"{repr(self.dest)} = getelementptr {repr(self.src)}[{self.offset}]"
+        return f"{inst_str:<50} ; live: {repr(self.live) if self.live else ''}\n"
+
+
+class TacUnreachable(TacInst):
+    def __init__(self):
+        super().__init__(TacOp.UNREACHABLE, None, None)
+
+    def __repr__(self) -> str:
+        return "unreachable\n"

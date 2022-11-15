@@ -26,6 +26,7 @@ class TacOp(Enum):
     SYSCALL = auto()
     GEP = auto()
     UNREACHABLE = auto()
+    ALLOC = auto()
 
 
 class TacCmpOp(Enum):
@@ -40,6 +41,7 @@ class TacFunc:
         self.name = name
         self.params = params if params is not None else []
         self.insts = insts if insts is not None else []
+        self.stack_space = 0
 
     def __repr__(self) -> str:
         insts_repr = []
@@ -52,17 +54,42 @@ class TacFunc:
 
     def append(self, tacnode:TacInst) -> None:
         self.insts.append(tacnode)
-
+    
+    def set_stack_space(self, space:int) -> None:
+        self.stack_space = space
     pass
 
 class PReg(object):
-    def __init__(self, name:str, offset:int=None):
+    def __init__(self, name:str, offset:int=0):
         self.name = name
         self.offset = offset
 
     def __repr__(self) -> str:
-        offset_str = f"+{self.offset}" if self.offset is not None else ""
+        offset_str = f"+{self.offset}" if self.offset else ""
         return f"{self.name}{offset_str}"
+
+    def __eq__(self, other) -> bool:
+        return isinstance(other, PReg) and self.name == other.name and self.offset == other.offset
+
+    def __ne__(self, other) -> bool:
+        return not self.__eq__(other)
+
+    def __hash__(self) -> int:
+        return hash(self.name)
+
+    def get_name(self) -> str:
+        if self.name == "rbp":
+            return f"{self.offset}({self.name})"
+        return self.name
+
+    def get_32_name(self) -> str:
+        if self.name[2].isdigit():
+            return self.name + "d"
+        return "%e" + self.name[2:]
+
+    def get_offset(self) -> int:
+        return int(self.offset)
+    
     pass
 
 
@@ -74,6 +101,15 @@ class TacValue(object):
     
     def get_preg(self) -> PReg:
         return self.physical_reg
+
+    def get_preg_str(self) -> str:
+        return self.physical_reg.get_name()
+    
+    def get_preg_32_str(self) -> str:
+        return self.physical_reg.get_32_name()
+    
+    def get_preg_offset(self) -> str:
+        return self.physical_reg.get_offset()
     pass
 
 
@@ -245,11 +281,16 @@ class TacCall(TacInst):
         self.func = func
         self.args = args
         self.dest = dest
+        self.save_regs:List[PReg] = None
 
     def __repr__(self) -> str:
         inst_str = f"{repr(self.dest)} = call {self.func}({', '.join(repr(arg) for arg in self.args)})"
         return f"{inst_str:<50} ; live: {repr(self.live) if self.live else ''}\n"
         raise NotImplementedError
+
+    def set_save_regs(self, save_regs:List[PReg]):
+        self.save_regs = save_regs
+    
 
 
 class TacRet(TacInst):
@@ -284,27 +325,27 @@ class TacNegate(TacUnaryOp):
 
 
 class TacLoad(TacInst):
-    def __init__(self, src:TacReg, dest:TacReg, offset:int=None):
+    def __init__(self, src:TacReg, dest:TacReg, offset:int=0):
         super().__init__(TacOp.LOAD, {src}, {dest})
         self.src = src
         self.dest = dest
         self.offset = offset
 
     def __repr__(self) -> str:
-        offset_str = f"[{str(self.offset)}]" if self.offset is not None else ""
+        offset_str = f"[{str(self.offset)}]" if self.offset else ""
         inst_str = f"{repr(self.dest)} = load {repr(self.src)}{offset_str}"
         return f"{inst_str:<50} ; live: {repr(self.live) if self.live else ''}\n"
 
 
 class TacStore(TacInst):
-    def __init__(self, src:TacReg, dest:TacReg, offset:int=None):
+    def __init__(self, src:TacReg, dest:TacReg, offset:int=0):
         super().__init__(TacOp.STORE, {src, dest}, None)
         self.src = src
         self.dest = dest
         self.offset = offset
     
     def __repr__(self) -> str:
-        offset_str = f"[{str(self.offset)}]" if self.offset is not None else ""
+        offset_str = f"[{str(self.offset)}]" if self.offset else ""
         inst_str = f"store {repr(self.src)} {repr(self.dest)}{offset_str}"
         return f"{inst_str:<50} ; live: {repr(self.live) if self.live else ''}\n"
 
@@ -318,6 +359,9 @@ class TacCreate(TacInst):
     def __repr__(self) -> str:
         inst_str = f"{repr(self.dest)} = create {self.object}"
         return f"{inst_str:<50} ; live: {repr(self.live) if self.live else ''}\n"
+    
+    def get_object(self) -> str:
+        return self.object
 
 
 class TacDeclare(TacInst):
@@ -329,6 +373,9 @@ class TacDeclare(TacInst):
     def __repr__(self) -> str:
         inst_str = f"{repr(self.dest)} = declare {self.object}"
         return f"{inst_str:<50} ; live: {repr(self.live) if self.live else ''}\n"
+    
+    def get_object(self) -> str:
+        return self.object
 
 
 class TacSyscall(TacInst):
@@ -361,3 +408,16 @@ class TacUnreachable(TacInst):
 
     def __repr__(self) -> str:
         return "unreachable\n"
+
+
+class TacAlloc(TacInst):
+    def __init__(self, obj:str, dest:TacReg):
+        super().__init__(TacOp.ALLOC, None, {dest})
+        self.obj = obj
+        self.dest = dest
+
+    def __repr__(self) -> str:
+        inst_str = f"{repr(self.dest)} = alloc {self.obj}"
+        return f"{inst_str:<50} ; live: {repr(self.live) if self.live else ''}\n"
+
+

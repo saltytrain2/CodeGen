@@ -1,6 +1,5 @@
 from __future__ import annotations
 from cfgnodes import *
-import networkx as nx
 
 class CFG(object):
     def __init__(self, tacfuncs:List[TacFunc]):
@@ -39,6 +38,9 @@ class CFG(object):
             cfg.precolor_regs()
             cfg.alloc_regs()
         pass
+    
+    def to_tacfuncs(self) -> List[TacFunc]:
+        return [i.to_tacfunc() for i in self.cfg_list]
 
     def build_interference_graph(self) -> None:
         # find the live ranges of each variable

@@ -2,7 +2,6 @@ from __future__ import annotations
 from tacnodes import *
 from collections import deque
 from typing import Deque
-import networkx as nx
 from heapq import heappush, heappop
 
 
@@ -67,30 +66,48 @@ class CFGBlock(object):
 
 class RegisterAllocator(object):
     def __init__(self):
-        self.caller_saved:List[str] = ["rdi", "rsi", "rdx", "rcx", "r8", "r9"]
-        self.callee_saved:List[str] = ["rbx", "r12", "r13", "r14", "r15"]
-        self.return_reg:str = "rax"
-        self.off_limits:List[str] = ["rsp", "rbp"]
+        self.param_regs:Set[PReg] = {
+            PReg("rdi"), PReg("rsi"), PReg("rdx"), PReg("rcx"), PReg("r8"), PReg("r9")
+        }
+        self.return_reg:PReg = PReg("rax")
+        self.caller_saved:Set[PReg] = self.param_regs.union({ PReg("r10") })
+        self.callee_saved:Set[PReg] = {
+            PReg("rbx"), PReg("r12"), PReg("r13"), PReg("r14"), PReg("r15")
+        }
         self.reset()
+
+    def get_unused_caller_reg(self) -> None:
+        disjoint = self.caller_saved - self.used_regs
+        return list(disjoint)[0] if disjoint else None
+
+    def get_unused_callee_reg(self) -> None:
+        disjoint = self.callee_saved - self.used_regs
+        return list(disjoint)[0] if disjoint else None
     
-    def dealloc_reg(self, reg:str) -> None:
-        self.available_regs.append(reg)
-        self.used_regs.remove(reg)
+    def get_caller_regs(self) -> Set[PReg]:
+        return self.caller_saved
+
+    def get_callee_regs(self) -> Set[PReg]:
+        return self.callee_saved
+
+    def add_used_reg(self, reg:PReg) -> None:
+        self.used_regs.add(reg)
     
     def isFull(self) -> bool:
-        return not self.available_regs
+        return len(list(self.used_regs)) == 14
     
-    def alloc_reg(self) -> str:
-        if not self.available_regs:
-            return None
-        
-        reg = self.available_regs.pop()
-        self.used_regs.add(reg)
+    def get_unused_reg(self) -> None:
+        # lets try to get a caller-saved register
+        reg = self.get_unused_caller_reg()
+        if reg is not None:
+            return reg
+
+        # try to get a callee-saved register instead
+        reg = self.get_unused_callee_reg()
         return reg
-    
+
     def reset(self) -> None:
-        self.used_regs = set()
-        self.available_regs = self.caller_saved + self.callee_saved
+        self.used_regs:Set[PReg] = set()
 
 
 class CFGFunc(object):
@@ -211,5 +228,13 @@ class CFGFunc(object):
 
         def spill_at_interval():
             pass
-        
+        pass
         #for inst in self.
+    
+    def to_tacfunc(self) -> TacFunc:
+        insts = []
+        for cfg_block in self.cfg_blocks:
+            insts.extend(cfg_block.inst_list)
+
+        return TacFunc(self.name, self.params, insts)
+

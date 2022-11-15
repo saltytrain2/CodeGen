@@ -69,7 +69,7 @@ class Tac(object):
         obj_reg = self.create_reg(True)
         temp_reg = self.create_reg()
         size = 8 * len(self.class_map[c]) + 24
-        self.cur_tacfunc.append(TacDeclare(c, obj_reg))
+        self.cur_tacfunc.append(TacAlloc(c, obj_reg))
         self.cur_tacfunc.append(TacSyscall("malloc", [TacImm(size)], temp_reg))
         self.cur_tacfunc.append(TacStore(temp_reg, obj_reg))
 
@@ -109,7 +109,7 @@ class Tac(object):
         local_regs = [self.create_reg(True) for _ in params]
         for i, param in enumerate(params):
             name = param_names[i]
-            self.cur_tacfunc.append(TacDeclare(name, local_regs[i]))
+            self.cur_tacfunc.append(TacAlloc(name, local_regs[i]))
             self.symbol_table[name].append(local_regs[i])
 
         for i, param in enumerate(params):
@@ -172,7 +172,7 @@ class Tac(object):
         
         if not isinstance(exp, (Variable, Assign)):
             self.declaration_map[exp] = self.create_reg(True)
-            self.cur_tacfunc.append(TacDeclare(exp.exp_type, self.declaration_map[exp]))
+            self.cur_tacfunc.append(TacAlloc(exp.exp_type, self.declaration_map[exp]))
 
     def tacgen_exp(self, exp:Expression) -> TacReg:
         if isinstance(exp, Binop):

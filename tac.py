@@ -249,7 +249,7 @@ class Tac(object):
         elif isinstance(exp, StringExp):
             str_reg = self.create_reg()
             self.cur_tacfunc.append(TacCreate("String", str_reg))
-            self.cur_tacfunc.append(TacStore(TacStr(exp.val), str_reg))
+            self.cur_tacfunc.append(TacStore(TacStr(exp.val), str_reg, 3))
             self.cur_tacfunc.append(TacStore(str_reg, self.declaration_map[exp]))
             return self.declaration_map[exp]
         elif isinstance(exp, Bool):

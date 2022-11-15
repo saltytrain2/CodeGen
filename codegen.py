@@ -170,5 +170,5 @@ class CodeGen(object):
         elif isinstance(inst, TacRet):
             asm.append(f"\tmovq\t{inst.get_preg_str()}, %rax\n")
         elif isinstance(inst, TacSyscall):
-            if 
+            pass 
         

@@ -73,6 +73,7 @@ class CFGBlock(object):
         r9 -> arithmetic operation result
         r11 -> trash register for arithmetic operations
         r10 -> load register
+        rcx -> immediate register
         rax -> subroutine return register
         """
         offset = 0

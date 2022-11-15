@@ -3,6 +3,7 @@ from deserialize import *
 from coolast import *
 from tac import Tac
 from cfg import CFG
+from codegen import CodeGen
 import sys
 
 
@@ -19,7 +20,9 @@ def main(argv):
     cfg.calc_interference()
     cfg.optimize()
     cfg.alloc_regs()
-    cfg.debug_cfg()
+    #cfg.debug_cfg()
+    cgen = CodeGen(impl_map, cfg.to_tacfuncs())
+    print(cgen.gen_x86())
     #cfg.build_interference_graph()
 
 if __name__ == '__main__':

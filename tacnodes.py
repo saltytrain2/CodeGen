@@ -142,6 +142,8 @@ class TacReg(TacValue):
 class TacImm(TacValue):
     def __init__(self, val:int):
         self.val = val
+        # TODO this is because of PA5
+        self.set_preg(PReg("%rcx"))
 
     def __repr__(self) -> str:
         return "$" + str(self.val)

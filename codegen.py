@@ -86,9 +86,9 @@ class CodeGen(object):
         asm.append("\tsubq\t${offset}, %rsp\n")
         
         # push all the callee saved registers into the stack
-        callee_regs = ["%rbx", "%r12", "%r13", "%r14", "%r15"]
-        for reg in callee_regs:
-            asm.append(f"\tpushq\t{reg}\n")
+        #callee_regs = ["%rbx", "%r12", "%r13", "%r14", "%r15"]
+        #for reg in callee_regs:
+        #    asm.append(f"\tpushq\t{reg}\n")
 
         for inst in tacfunc.inst_list:
             self.gen_x86_inst(asm, inst)

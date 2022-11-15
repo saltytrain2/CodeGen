@@ -127,12 +127,12 @@ class Tac(object):
 
     def create_let_stack_vars(self, binding:LetBinding):
         self.declaration_map[binding] = self.create_reg(True)
-        self.cur_tacfunc.append(TacDeclare(binding.var_type.name, self.declaration_map[binding]))
+        self.cur_tacfunc.append(TacAlloc(binding.var_type.name, self.declaration_map[binding]))
         self.create_stack_vars(binding.val)
 
     def create_case_stack_vars(self, case_elem:CaseElement):
         self.declaration_map[case_elem] = self.create_reg(True)
-        self.cur_tacfunc.append(TacDeclare(case_elem.get_type(), self.declaration_map[case_elem]))
+        self.cur_tacfunc.append(TacAlloc(case_elem.get_type(), self.declaration_map[case_elem]))
         self.create_stack_vars(case_elem.expr)
         pass
 
@@ -176,13 +176,12 @@ class Tac(object):
 
     def tacgen_exp(self, exp:Expression) -> TacReg:
         if isinstance(exp, Binop):
-            lhs_reg = self.tacgen_exp(exp.lhs)
             rhs_reg = self.tacgen_exp(exp.rhs)
-            #ret_reg = self.create_reg(True)
-            temp_reg = self.create_reg()
+            lhs_reg = self.tacgen_exp(exp.lhs)
+            create_reg = self.create_reg()
             if isinstance(exp, (Plus, Minus, Times, Divide)):
-                #self.cur_tacfunc.append(TacDeclare("Int", ret_reg))
-                self.cur_tacfunc.append(TacCreate("Int", temp_reg))
+                self.cur_tacfunc.append(TacCreate("Int", create_reg))
+                self.cur_tacfunc.append(TacStore(create_reg, self.declaration_map[exp]))
                 lhs_base = self.create_reg()
                 lhs_prim = self.create_reg()
                 self.cur_tacfunc.append(TacLoad(lhs_reg, lhs_base))
@@ -212,10 +211,13 @@ class Tac(object):
                     self.cur_tacfunc.append(TacUnreachable())
                     self.cur_tacfunc.append(false_label)
                     self.cur_tacfunc.append(TacDiv(lhs_prim, rhs_prim, res_reg))
+                temp_reg = self.create_reg()
+                self.cur_tacfunc.append(TacLoad(self.declaration_map[exp], temp_reg))
                 self.cur_tacfunc.append(TacStore(res_reg, temp_reg, 3))
                 self.cur_tacfunc.append(TacStore(temp_reg, self.declaration_map[exp]))
             else:
-                self.cur_tacfunc.append(TacCreate("Bool", temp_reg))
+                self.cur_tacfunc.append(TacCreate("Bool", create_reg))
+                self.cur_tacfunc.append(TacStore(create_reg, self.declaration_map[exp]))
                 lhs_val = self.create_reg()
                 rhs_val = self.create_reg()
                 res_reg = self.create_reg()
@@ -233,6 +235,8 @@ class Tac(object):
                 else:
                     self.cur_tacfunc.append(TacIcmp(TacCmpOp.EQ, lhs_reg, rhs_reg, res_reg))
                 
+                temp_reg = self.create_reg()
+                self.cur_tacfunc.append(TacLoad(self.declaration_map[exp], temp_reg))
                 self.cur_tacfunc.append(TacStore(res_reg, temp_reg, 3))
                 self.cur_tacfunc.append(TacStore(temp_reg, self.declaration_map[exp]))
             return self.declaration_map[exp]

@@ -63,6 +63,35 @@ class CFGBlock(object):
 
         return changed
 
+    def fixed_alloc(self) -> None:
+        """ 
+        We now assign each tacreg a physical register based on the instruction
+        This is heavily based on a lot of assumptions on what our tac looks like
+
+        r8 -> arithmetic operand 1
+        r9 -> arithmetic operand 2
+        r9 -> arithmetic operation result
+        r11 -> trash register for arithmetic operations
+        r10 -> load register
+        rax -> subroutine return register
+        """
+        offset = 0
+        
+        for inst in self.inst_list:
+            if isinstance(inst, TacAlloc):
+                inst.dest.set_preg(PReg("%rbp", offset))
+                offset -= 8
+            elif isinstance(inst, Binop):
+                inst.dest.set_preg(PReg("%r9"))
+            elif isinstance(inst, (TacCreate, TacCall, TacSyscall)):
+                inst.dest.set_preg(PReg("%rax"))
+            elif isinstance(inst, TacLoad):
+                inst.dest.set_preg(PReg("%r10"))
+            elif isinstance(inst, TacRet):
+                pass
+        
+        return abs(offset)
+
 
 class RegisterAllocator(object):
     def __init__(self):
@@ -114,6 +143,7 @@ class CFGFunc(object):
     def __init__(self, func:TacFunc):
         self.name = func.name
         self.params = func.params
+        self.stack_space = 0
         self.cfg_map:Dict[str, CFGBlock] = defaultdict(CFGBlock, name="")
         self.cfg_blocks:List[CFGBlock] = []
         self.interference:Dict[TacReg, Set[TacReg]] = defaultdict(set)
@@ -147,7 +177,7 @@ class CFGFunc(object):
         return self.cfg_blocks
 
     def __repr__(self) -> str:
-        str_list = [f"{self.name}{str(self.params)}\n"]
+        str_list = [f"{self.name}{str(self.params)} {self.stack_space}\n"]
         for cfg_block in self.cfg_blocks:
             str_list.append(repr(cfg_block))
         return "".join(str_list)
@@ -171,7 +201,31 @@ class CFGFunc(object):
                 changed = True if prev_dominators != cfg_block.dominators else changed
 
     def alloc_regs(self) -> None:
-        self.linear_scan_alloc()
+        self.fixed_alloc()
+    
+    def fixed_alloc(self) -> None:
+        """  
+        This is the register allocation scheme that is solely for PA5
+        We hardcode all register allocations, which is allowed since we spill every temp to memory
+        """
+
+        # first handle the parameters
+        offset = 8
+        param_regs = ["%rdi", "%rsi", "%rdx", "%rcx", "%r8", "%r9"]
+        for i, param in enumerate(self.params):
+            if i < 7:
+                param.set_preg(PReg(param_regs[i]))
+            else:
+                param.set_preg(PReg("%rbp", offset))
+                offset += 8
+        
+        self.stack_space += offset - 8
+
+        # now handle everything else
+        for cfg_block in self.cfg_blocks:
+            stack_space = cfg_block.fixed_alloc()
+            self.stack_space += stack_space
+        pass
 
     def precolor_regs(self) -> None:
         # some registers are forced due to the calling convention

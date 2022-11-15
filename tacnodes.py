@@ -37,11 +37,11 @@ class TacCmpOp(Enum):
 
 
 class TacFunc:
-    def __init__(self, name:str, params:List[TacReg]=None, insts:List[TacValue]=None):
+    def __init__(self, name:str, params:List[TacReg]=None, insts:List[TacValue]=None, space:int=0):
         self.name = name
         self.params = params if params is not None else []
         self.insts = insts if insts is not None else []
-        self.stack_space = 0
+        self.stack_space = space
 
     def __repr__(self) -> str:
         insts_repr = []
@@ -49,7 +49,7 @@ class TacFunc:
             insts_repr.append(repr(inst))
         formal_str = "".join(insts_repr)
 
-        return f"{self.name}({', '.join(repr(param) for param in self.params)})\n{formal_str}"
+        return f"{self.name}({', '.join(repr(param) for param in self.params)}) {self.stack_space}\n{formal_str}"
         raise NotImplementedError
 
     def append(self, tacnode:TacInst) -> None:

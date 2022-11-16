@@ -20,15 +20,19 @@ class StringAllocator(object):
         self.string_num = 0
 
     def add_string(self, string_name:str) -> str:
-        label = ".LC" + str(self.string_num)
-        self.string_map[label] = string_name
+        label = self.string_map[string_name]
+        if not label:
+            label = ".LC" + str(self.string_num)
+            self.string_map[string_name] = label
+            self.string_num += 1
+
         return label
 
     def gen_x86_strings(self, asm:List[str]):
-        for label in self.string_map:
+        for string_name in self.string_map:
             asm.append("\t.text\n\t.section\t.rodata\n")
-            asm.append(f"{label}\n")
-            asm.append(f"\t.asciz \"{self.string_map[label]}\"\n")
+            asm.append(f"{self.string_map[string_name]}:\n")
+            asm.append(f"\t.asciz \"{string_name}\"\n")
 
 
 class CodeGen(object):
@@ -51,7 +55,7 @@ class CodeGen(object):
             self.gen_x86_tacfunc(asm, tacfunc)
 
         # now generate the string labels
-        self.string_allocator.gen_x86(asm)
+        self.string_allocator.gen_x86_strings(asm)
 
         return "".join(asm)
     
@@ -72,8 +76,8 @@ class CodeGen(object):
     def gen_x86_tacfunc(self, asm:List[str], tacfunc:TacFunc):
         # set up the function prologue and label
         asm.append("\t.text\n")
-        asm.append("\t.globl {tacfunc.name}\n")
-        asm.append("\t{tacfunc.name}:\n")
+        asm.append(f"\t.globl {tacfunc.name}\n")
+        asm.append(f"{tacfunc.name}:\n")
         asm.append("\tpushq\t%rbp\n")
         asm.append("\tmovq\t%rsp, %rbp\n")
 
@@ -94,7 +98,7 @@ class CodeGen(object):
         # return address handling
         asm.append("\tmovq\t%rbp, %rsp\n")
         asm.append("\tpopq\t%rbp\n")
-        asm.append("\nret\n")
+        asm.append("\tret\n\n")
 
     def gen_x86_inst(self, asm:List[str], inst:TacInst) -> str:
         if isinstance(inst, TacLabel):
@@ -123,33 +127,66 @@ class CodeGen(object):
             asm.append(f"\tmovl\t%eax, {inst.dest.get_preg_32_str()}\n")
             asm.append("\tmovq\t%r11, %rdx\n")
         elif isinstance(inst, TacLoad):
-            mem_reg = inst.src.get_preg_str() if inst.src.isstack else f"{inst.offset}({inst.src.get_preg_str()})"
+            mem_reg = inst.src.get_preg_str() if inst.src.isstack else f"{inst.offset*8 if inst.offset is not None else 0}({inst.src.get_preg_str()})"
             asm.append(f"\tmovq\t{mem_reg}, {inst.dest.get_preg_str()}\n")
         elif isinstance(inst, TacStore):
-            mem_reg = inst.dest.get_preg_str() if inst.dest.isstack else f"{inst.offset}({inst.dest.get_preg_str()})"
+            mem_reg = inst.dest.get_preg_str() if inst.dest.isstack else f"{inst.offset*8 if inst.offset is not None else 0}({inst.dest.get_preg_str()})"
             asm.append(f"\tmovq\t{inst.src.get_preg_str()}, {mem_reg})\n")
-        elif isinstance(inst, TacCall):
+        elif isinstance(inst, TacLoadImm):
+            if isinstance(inst.imm, TacImmLabel):
+                asm.append(f"\tmovq\t{inst.imm.val}(%rip), %r10\n")
+            elif isinstance(inst.imm, TacStr):
+                str_label = self.string_allocator.add_string(inst.imm.val)
+                asm.append(f"\tmovq\t{str_label}(%rip), %r10\n")
+            elif isinstance(inst.imm, TacImm):
+                asm.append(f"\tmovq\t${inst.imm.val}, %r10\n")
+        elif isinstance(inst, (TacCall, TacSyscall)):
             # TODO assume that all clobbered registers are getting clobbered
-            save_regs = inst.save_regs
-            stack = []
-            for reg in save_regs:
+            stack:List[str] = []
+            for reg in inst.save_regs:
                 asm.append(f"\tpushq\t{reg.get_name()}\n")
                 stack.append(reg.get_name())
 
+            # move the parameters into place
+            param_registers = ["%rdi", "%rsi", "%rdx", "%rcx", "%r8", "%r9"]
+            params = list(reversed(inst.args))
+            i = 0
+            while params and i:
+                param = params.pop()
+                asm.append(f"\tmovq\t{param.get_preg_str()}, {param_registers[i]}")
+                i += 1
+            
+            # if there are any leftover parameters, push them onto the stack
+            for param in params:
+                if param.isstack:
+                    asm.append(f"\tmovq\t{param.get_preg_str()}, %r11\n")
+                    asm.append("\tpushq\t%r11\n")
+                    stack.append("%r11")
+                else:
+                    asm.append(f"\tpushq\t{param.get_preg_str()}\n")
+                    stack.append(param.get_preg_str())
+
             # get the vtable
             # there should only be a . in the function name if this is a static dispatch
-            if "." in inst.func:
+            if isinstance(inst, TacSyscall):
+                if "printf" in inst.func:
+                    asm.append("\txor\t%eax, %eax\n")
+                asm.append(f"\tcall\t{inst.func}\n")
+            elif "." in inst.func:
                 class_name = inst.func[:inst.func.index(".")]
-                asm.append(f"\tmovq\t${class_name}..vtable, %r11\n")
+                asm.append(f"\tmovq\t${class_name}..vtable(%rip), %r10\n")
+                asm.append(f"\tcall\t*%r10\n")
             else:
-                asm.append(f"\tmovq\t%rdi, %r11\n")
-            asm.append(f"\tcall\t*%r11\n")
+                asm.append(f"\tmovq\t%rdi, %r10\n")
+                asm.append(f"\tcall\t*%r10\n")
 
             # pop off everything in the stack
             while stack:
                 asm.append(f"\tpopq\t{stack.pop()}\n")
         elif isinstance(inst, TacRet):
             asm.append(f"\tmovq\t{inst.src.get_preg_str()}, %rax\n")
-        elif isinstance(inst, TacSyscall):
-            pass 
+        elif isinstance(inst, TacIcmp):
+            pass
+        elif isinstance(inst, TacBr):
+            pass
         

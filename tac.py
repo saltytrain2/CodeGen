@@ -67,16 +67,24 @@ class Tac(object):
         temp_num = self.num
         self.cur_tacfunc = TacFunc(f"{c}..new", None)
         obj_reg = self.create_reg(True)
-        temp_reg = self.create_reg()
         size = 8 * len(self.class_map[c]) + 24
         self.cur_tacfunc.append(TacAlloc(c, obj_reg))
-        self.cur_tacfunc.append(TacSyscall("malloc", [TacImm(size)], temp_reg))
+        malloc_size_reg = self.create_reg()
+        temp_reg = self.create_reg()
+        self.cur_tacfunc.append(TacLoadImm(TacImm(size), malloc_size_reg))
+        self.cur_tacfunc.append(TacSyscall("malloc", [malloc_size_reg], temp_reg))
         self.cur_tacfunc.append(TacStore(temp_reg, obj_reg))
 
         # store class_tag, obj_size, and vtable
-        self.cur_tacfunc.append(TacStore(TacImm(self.class_tags[c]), obj_reg, 0))
-        self.cur_tacfunc.append(TacStore(TacImm(size), obj_reg, 1))
-        self.cur_tacfunc.append(TacStore(TacImm(f"{c}..vtable:"), obj_reg, 2))
+        class_tag_reg = self.create_reg()
+        self.cur_tacfunc.append(TacLoadImm(TacImm(self.class_tags[c]), class_tag_reg))
+        self.cur_tacfunc.append(TacStore(class_tag_reg, obj_reg, 0))
+        size_reg = self.create_reg()
+        self.cur_tacfunc.append(TacLoadImm(TacImm(size), size_reg))
+        self.cur_tacfunc.append(TacStore(size_reg, obj_reg, 1))
+        vtable_reg = self.create_reg()
+        self.cur_tacfunc.append(TacLoadImm(TacImmLabel(f"{c}..vtable"), vtable_reg))
+        self.cur_tacfunc.append(TacStore(vtable_reg, obj_reg, 2))
 
         for attr in self.class_map[c]:
             if attr.attr_type in {"Bool", "Int", "String"}:
@@ -84,7 +92,9 @@ class Tac(object):
                 self.cur_tacfunc.append(TacCreate(attr.attr_type, temp_reg))
                 self.cur_tacfunc.append(TacStore(temp_reg, obj_reg, self.attr_table[attr.get_name()]))
             else:
-                self.cur_tacfunc.append(TacStore(TacImm(0), obj_reg, self.attr_table[attr.get_name()]))
+                zero_reg = self.create_reg()
+                self.cur_tacfunc.append(TacLoadImm(TacImm(0), zero_reg))
+                self.cur_tacfunc.append(TacStore(zero_reg, obj_reg, self.attr_table[attr.get_name()]))
         
         ret_reg = self.create_reg()
         self.cur_tacfunc.append(TacLoad(obj_reg, ret_reg))
@@ -176,8 +186,9 @@ class Tac(object):
 
     def tacgen_exp(self, exp:Expression) -> TacReg:
         if isinstance(exp, Binop):
-            rhs_reg = self.tacgen_exp(exp.rhs)
+            #rhs_reg = self.tacgen_exp(exp.rhs)
             lhs_reg = self.tacgen_exp(exp.lhs)
+            rhs_reg = self.tacgen_exp(exp.rhs)
             create_reg = self.create_reg()
             if isinstance(exp, (Plus, Minus, Times, Divide)):
                 self.cur_tacfunc.append(TacCreate("Int", create_reg))
@@ -198,16 +209,20 @@ class Tac(object):
                 elif isinstance(exp, Times):
                     self.cur_tacfunc.append(TacMul(lhs_prim, rhs_prim, res_reg))
                 elif isinstance(exp, Divide):
+                    zero_reg = self.create_reg()
+                    self.cur_tacfunc.append(TacLoadImm(TacImm(0), zero_reg))
                     cmp_zero = self.create_reg()
-                    self.cur_tacfunc.append(TacIcmp(TacCmpOp.EQ, TacImm(0), rhs_prim, cmp_zero))
+                    self.cur_tacfunc.append(TacIcmp(TacCmpOp.EQ, zero_reg, rhs_prim, cmp_zero))
                     true_label = self.create_label()
                     false_label = self.create_label()
                     self.cur_tacfunc.append(TacBr(cmp_zero, true_label, false_label))
                     self.cur_tacfunc.append(true_label)
                     error_str = self.create_reg()
-                    self.cur_tacfunc.append(TacStore(TacStr(f"ERROR: {exp.lineno}: division by zero\n"), error_str))
+                    self.cur_tacfunc.append(TacLoadImm(TacStr(f"ERROR: {exp.lineno}: division by zero\\n"), error_str))
                     self.cur_tacfunc.append(TacSyscall("printf@PLT", [error_str], self.create_reg()))
-                    self.cur_tacfunc.append(TacSyscall("exit@PLT", [TacImm(1)], self.create_reg()))
+                    one_reg = self.create_reg()
+                    self.cur_tacfunc.append(TacLoadImm(TacImm(0), one_reg))
+                    self.cur_tacfunc.append(TacSyscall("exit@PLT", [one_reg], self.create_reg()))
                     self.cur_tacfunc.append(TacUnreachable())
                     self.cur_tacfunc.append(false_label)
                     self.cur_tacfunc.append(TacDiv(lhs_prim, rhs_prim, res_reg))
@@ -242,20 +257,27 @@ class Tac(object):
             return self.declaration_map[exp]
         elif isinstance(exp, Integer):
             int_reg = self.create_reg()
+            prim_int_val = self.create_reg()
             self.cur_tacfunc.append(TacCreate("Int", int_reg))
-            self.cur_tacfunc.append(TacStore(TacImm(int(exp.val)), int_reg, 3))
+            self.cur_tacfunc.append(TacLoadImm(TacImm(int(exp.val)), prim_int_val))
+            self.cur_tacfunc.append(TacStore(prim_int_val, int_reg, 3))
             self.cur_tacfunc.append(TacStore(int_reg, self.declaration_map[exp]))
             return self.declaration_map[exp]
         elif isinstance(exp, StringExp):
             str_reg = self.create_reg()
+            prim_str_val = self.create_reg()
             self.cur_tacfunc.append(TacCreate("String", str_reg))
-            self.cur_tacfunc.append(TacStore(TacStr(exp.val), str_reg, 3))
+            # TODO maybe I dont need to replace the \n and \t
+            self.cur_tacfunc.append(TacLoadImm(TacStr(exp.val), prim_str_val))
+            self.cur_tacfunc.append(TacStore(prim_str_val, str_reg, 3))
             self.cur_tacfunc.append(TacStore(str_reg, self.declaration_map[exp]))
             return self.declaration_map[exp]
         elif isinstance(exp, Bool):
             bool_reg = self.create_reg()
+            prim_bool_val = self.create_reg()
             self.cur_tacfunc.append(TacCreate("Bool", bool_reg))
-            self.cur_tacfunc.append(TacStore(TacImm(1 if exp.kind == "true" else 0), bool_reg, 3))
+            self.cur_tacfunc.append(TacLoadImm(TacImm(1 if exp.kind == "true" else 0)), prim_bool_val)
+            self.cur_tacfunc.append(TacStore(prim_bool_val, bool_reg, 3))
             self.cur_tacfunc.append(TacStore(bool_reg, self.declaration_map[exp]))
             return self.declaration_map[exp]
         elif isinstance(exp, Dispatch):
@@ -274,13 +296,16 @@ class Tac(object):
             if self.symbol_table[var_name]:
                 return self.symbol_table[var_name][-1]
 
-            return self.attr_table[var_name]
+            temp_reg = self.create_reg()
+            self.cur_tacfunc.append(TacLoad(self.symbol_table["self"][-1], temp_reg, self.attr_table[var_name]))
+            return temp_reg
         elif isinstance(exp, New):
             dest_reg = self.create_reg()
             self.cur_tacfunc.append(TacCreate(exp.class_name.get_name(), dest_reg))
             self.cur_tacfunc.append(TacStore(dest_reg, self.declaration_map[exp]))
             return self.declaration_map[exp]
         elif isinstance(exp, UnaryOp):
+            # TODO these unary operations are clearly wrong
             rhs_reg = self.tacgen_exp(exp.rhs)
             dest_reg = self.create_reg()
             if isinstance(exp, Negate):
@@ -288,7 +313,9 @@ class Tac(object):
             elif isinstance(exp, Not):
                 self.cur_tacfunc.append(TacNot(rhs_reg, dest_reg))
             else:
-                self.cur_tacfunc.append(TacIcmp(TacCmpOp.EQ, rhs_reg, TacImm(0), dest_reg))
+                zero_reg = self.create_reg()
+                self.cur_tacfunc.append(TacLoadImm(TacImm(0)), zero_reg)
+                self.cur_tacfunc.append(TacIcmp(TacCmpOp.EQ, rhs_reg, zero_reg, dest_reg))
             self.cur_tacfunc.append(TacStore(dest_reg, self.declaration_map[exp]))
             return self.declaration_map[exp]
         elif isinstance(exp, If):
@@ -374,7 +401,7 @@ class Tac(object):
             for i, case_elem in enumerate(exp.case_list):
                 false_label = self.create_label()
                 case_class_tag = self.create_reg()
-                self.cur_tacfunc.append(TacLoad(TacImm(self.class_tags[case_elem.get_type()]), case_class_tag, 0))
+                self.cur_tacfunc.append(TacLoadImm(TacImm(self.class_tags[case_elem.get_type()]), case_class_tag, 0))
                 branch_reg = self.create_reg()
                 self.cur_tacfunc.append(TacIcmp(TacCmpOp.EQ, case_class_tag, class_tag, branch_reg))
                 self.cur_tacfunc.append(TacBr(branch_reg, case_labels[i], false_label))

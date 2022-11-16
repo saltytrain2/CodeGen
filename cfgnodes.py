@@ -63,7 +63,7 @@ class CFGBlock(object):
 
         return changed
 
-    def fixed_alloc(self, reg_allocator:FixedRegisterAllocator) -> None:
+    def fixed_alloc(self, reg_allocator:FixedRegisterAllocator) -> int:
         """ 
         We now assign each tacreg a physical register based on the instruction
         This is heavily based on a lot of assumptions on what our tac looks like
@@ -86,14 +86,18 @@ class CFGBlock(object):
                 inst.dest.set_preg(PReg("%rbp", offset))
                 offset -= 8
             elif isinstance(inst, (TacCreate, TacCall, TacSyscall)):
+                # TODO this might need to change
                 inst.dest.set_preg(PReg("%rax"))
             elif isinstance(inst, TacRet):
                 pass
+            elif isinstance(inst, TacLoadImm):
+                inst.dest.set_preg(PReg("%r10"))
             elif isinstance(inst, (TacBinOp, TacUnaryOp, TacLoad)):
                 regs_to_alloc.append(inst.dest)
+
         
         for treg in regs_to_alloc:
-            physical_reg = reg_allocator.add_used_reg(treg)
+            physical_reg = reg_allocator.get_unused_reg(treg)
             assert physical_reg is not None
 
             treg.set_preg(physical_reg)
@@ -103,53 +107,46 @@ class CFGBlock(object):
 
 class FixedRegisterAllocator(object):
     def __init__(self, interference_graph:Dict[TacReg, Set[TacReg]]=None):
-        self.param_regs:Set[PReg] = {
-            PReg("rdi"), PReg("rsi"), PReg("rdx"), PReg("rcx"), PReg("r8"), PReg("r9")
-        }
-        self.return_reg:PReg = PReg("rax")
-        self.caller_saved:List[PReg] = list(self.param_regs)
+        self.return_reg:PReg = PReg("%rax")
+        self.caller_saved:List[PReg] = [
+            PReg("%rdi"), PReg("%rsi"), PReg("%rdx"), PReg("%rcx"), PReg("%r8"), PReg("%r9")
+        ]
         self.callee_saved:List[PReg] = [
-            PReg("rbx"), PReg("r12"), PReg("r13"), PReg("r14"), PReg("r15")
+            PReg("%rbx"), PReg("%r12"), PReg("%r13"), PReg("%r14"), PReg("%r15")
         ]
         self.interference_graph = interference_graph if interference_graph is not None else defaultdict(set)
-        self.reg_map:Dict[PReg, List[TacReg]] = defaultdict(list)
+        self.physical_reg_map:Dict[PReg, List[TacReg]] = defaultdict(list)
+        self.tac_reg_map:Dict[PReg, List[TacReg]] = defaultdict(list)
         self.reset()
 
     def get_caller_reg(self, input_reg:TacReg) -> TacReg:
         for physical_reg in self.caller_saved:
             # if the register is unused, yay
-            if physical_reg not in self.reg_map:
-                self.reg_map[physical_reg].append(input_reg)
+            if not self.physical_reg_map[physical_reg]:
+                self.physical_reg_map[physical_reg].append(input_reg)
                 return physical_reg
             
-            conflicts = False
-            for tac_reg in self.reg_map[physical_reg]:
-                if tac_reg in self.interference_graph[input_reg]:
-                    conflicts = True
-            
-            # if we dont have any conflicts, we are good to go
-            if not conflicts:
-                self.reg_map[physical_reg].append(input_reg)
-                return physical_reg
+            for tac_reg in self.physical_reg_map[physical_reg]:
+                # we can reuse the register since they do not overlap
+                if tac_reg not in self.interference_graph[input_reg]:
+                    self.physical_reg_map[physical_reg].append(input_reg)
+                    return physical_reg
+
         # we fell through, we found nothing
         return None
 
     def get_callee_reg(self, input_reg:TacReg) -> TacReg:
         for physical_reg in self.callee_saved:
             # if the register is unused, yay
-            if physical_reg not in self.reg_map:
-                self.reg_map[physical_reg].append(input_reg)
+            if not self.physical_reg_map[physical_reg]:
+                self.physical_reg_map[physical_reg].append(input_reg)
                 return physical_reg
             
-            conflicts = False
-            for tac_reg in self.reg_map[physical_reg]:
-                if tac_reg in self.interference_graph[input_reg]:
-                    conflicts = True
-            
-            # if we dont have any conflicts, we are good to go
-            if not conflicts:
-                self.reg_map[physical_reg].append(input_reg)
-                return physical_reg
+            for tac_reg in self.physical_reg_map[physical_reg]:
+                # we can reuse the register since they do not overlap
+                if tac_reg not in self.interference_graph[input_reg]:
+                    self.physical_reg_map[physical_reg].append(input_reg)
+                    return physical_reg
         # we fell through, we found nothing
         return None
     
@@ -159,8 +156,8 @@ class FixedRegisterAllocator(object):
     def get_callee_regs(self) -> Set[PReg]:
         return self.callee_saved
 
-    def add_used_reg(self, reg:PReg) -> None:
-        self.used_regs.add(reg)
+    def add_used_reg(self, physical_reg:PReg, treg:TacReg) -> None:
+        self.physical_reg_map[physical_reg].append(treg)
     
     def get_unused_reg(self, tacreg:TacReg) -> None:
         # lets try to get a caller-saved register
@@ -173,7 +170,8 @@ class FixedRegisterAllocator(object):
         return reg
 
     def reset(self) -> None:
-        self.used_regs:Set[PReg] = set()
+        self.physical_reg_map.clear()
+        self.tac_reg_map.clear()
     
     def update_interference(self, interference:Dict[TacReg, Set[TacReg]]) -> None:
         self.interference_graph = interference
@@ -272,12 +270,12 @@ class CFGFunc(object):
     def precolor_regs(self) -> None:
         # some registers are forced due to the calling convention
         offset = 0
-        param_regs = ["rdi", "rsi", "rdx", "rcx", "r8", "r9"]
+        param_regs = ["%rdi", "%rsi", "%rdx", "%rcx", "%r8", "%r9"]
         for i, param in enumerate(self.params):
             if i < 7:
                 param.set_preg(PReg(param_regs[i]))
             else:
-                param.set_preg(PReg("rbp", offset))
+                param.set_preg(PReg("%rbp", offset))
                 offset += 8
 
         offset = 8
@@ -285,7 +283,7 @@ class CFGFunc(object):
             # declared variables on stack will always be stored in rbp - offset
             if not isinstance(inst, TacDeclare):
                 break
-            inst.dest.set_preg(PReg("rbp", offset))
+            inst.dest.set_preg(PReg("%rbp", offset))
             offset -= 8
         pass
 
@@ -332,5 +330,5 @@ class CFGFunc(object):
         for cfg_block in self.cfg_blocks:
             insts.extend(cfg_block.inst_list)
 
-        return TacFunc(self.name, self.params, insts)
+        return TacFunc(self.name, self.params, insts, self.stack_space)
 

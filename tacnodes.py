@@ -20,6 +20,8 @@ class TacOp(Enum):
     ASSIGN = auto()
     LOAD = auto()
     STORE = auto()
+    LOADIMM = auto()
+    LOADSTR = auto()
     DECLARE = auto()
     CREATE = auto()
     LABEL = auto()
@@ -60,7 +62,7 @@ class TacFunc:
     pass
 
 class PReg(object):
-    def __init__(self, name:str, offset:int=0):
+    def __init__(self, name:str, offset:int=None):
         self.name = name
         self.offset = offset
 
@@ -78,14 +80,20 @@ class PReg(object):
         return hash(self.name)
 
     def get_name(self) -> str:
-        if self.name == "rbp":
+        if self.offset:
             return f"{self.offset}({self.name})"
         return self.name
 
     def get_32_name(self) -> str:
         if self.name[2].isdigit():
-            return self.name + "d"
-        return "%e" + self.name[2:]
+            reg_32_str = self.name + "d"
+        else:
+            reg_32_str = "%e" + self.name[2:]
+
+        if self.offset:
+            return f"{self.offset}({reg_32_str})"
+
+        return reg_32_str
 
     def get_offset(self) -> int:
         return int(self.offset)
@@ -94,7 +102,8 @@ class PReg(object):
 
 
 class TacValue(object):
-    physical_reg:PReg = None
+    def __init__(self):
+        self.physical_reg:PReg = None
     
     def set_preg(self, reg:PReg) -> None:
         self.physical_reg = reg
@@ -140,25 +149,28 @@ class TacReg(TacValue):
         self.live_end = end
 
 
-class TacImm(TacValue):
+class TacImm(object):
     def __init__(self, val:int):
         super().__init__()
         self.val = val
-        # TODO this is because of PA5
-        self.set_preg(PReg("%r10"))
 
     def __repr__(self) -> str:
         return "$" + str(self.val)
 
 
-class TacStr(TacValue):
+class TacStr(TacImm):
     def __init__(self, val:str):
-        super().__init__()
-        self.val = val
-        self.set_preg(PReg("%r10"))
+        super().__init__(val)
 
     def __repr__(self) -> str:
-        return f"\"{self.val}\""
+        return f"{repr(self.val)}"
+
+class TacImmLabel(TacImm):
+    def __init__(self, label:str):
+        super().__init__(label)
+
+    def __repr__(self) -> str:
+        return self.val
 
 
 class TacInst(object):
@@ -331,7 +343,7 @@ class TacNegate(TacUnaryOp):
 
 
 class TacLoad(TacInst):
-    def __init__(self, src:TacReg, dest:TacReg, offset:int=0):
+    def __init__(self, src:TacReg, dest:TacReg, offset:int=None):
         super().__init__(TacOp.LOAD, {src}, {dest})
         self.src = src
         self.dest = dest
@@ -343,8 +355,30 @@ class TacLoad(TacInst):
         return f"{inst_str:<50} ; live: {repr(self.live) if self.live else ''}\n"
 
 
+class TacLoadImm(TacInst):
+    def __init__(self, imm:TacImm, dest:TacReg):
+        super().__init__(TacOp.LOADIMM, None, {dest})
+        self.dest = dest
+        self.imm = imm
+
+    def __repr__(self) -> str:
+        inst_str = f"{repr(self.dest)} = load {repr(self.imm)}"
+        return f"{inst_str:<50} ; live: {repr(self.live) if self.live else ''}\n"
+
+
+class TacLoadStr(TacInst):
+    def __init__(self, dest:TacReg, string:TacStr):
+        super().__init__(TacOp.LOADSTR, None, {dest})
+        self.dest = dest
+        self.string = string
+    
+    def __repr__(self) -> str:
+        inst_str = f"{repr(self.dest)} = load {repr(self.string)}"
+        return f"{inst_str:<50} ; live: {repr(self.live) if self.live else ''}\n"
+
+
 class TacStore(TacInst):
-    def __init__(self, src:TacReg, dest:TacReg, offset:int=0):
+    def __init__(self, src:TacReg, dest:TacReg, offset:int=None):
         super().__init__(TacOp.STORE, {src, dest}, None)
         self.src = src
         self.dest = dest
@@ -390,10 +424,14 @@ class TacSyscall(TacInst):
         self.func = func
         self.args = args
         self.dest = dest
+        self.save_regs:List[PReg] = []
 
     def __repr__(self) -> str:
         inst_str = f"{repr(self.dest)} = syscall {self.func}({', '.join(repr(arg) for arg in self.args)})"
         return f"{inst_str:<50} ; live: {repr(self.live) if self.live else ''}\n"
+
+    def set_save_regs(self, save_regs:List[PReg]):
+        self.save_regs = save_regs
 
 
 class TacGep(TacInst):
@@ -425,5 +463,3 @@ class TacAlloc(TacInst):
     def __repr__(self) -> str:
         inst_str = f"{repr(self.dest)} = alloc {self.obj}"
         return f"{inst_str:<50} ; live: {repr(self.live) if self.live else ''}\n"
-
-

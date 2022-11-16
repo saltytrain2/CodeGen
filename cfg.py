@@ -42,6 +42,10 @@ class CFG(object):
             cfg.precolor_regs()
             cfg.alloc_regs()
         pass
+
+    def resolve_stack_discipline(self) -> None:
+        for cfg in self.cfg_list:
+            cfg.resolve_stack_discipline()
     
     def to_tacfuncs(self) -> List[TacFunc]:
         return [i.to_tacfunc() for i in self.cfg_list]
@@ -51,3 +55,4 @@ class CFG(object):
         # for cfg in self.cfg_list:
         #     cfg.calc_liveness()
         pass
+

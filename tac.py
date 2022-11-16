@@ -11,6 +11,7 @@ class Tac(object):
     symbol_table:Dict[str, List[TacReg]] = defaultdict(list)
     class_tags:Dict[str, int] = defaultdict(int)
     attr_table:Dict[str, int] = defaultdict(int)
+    method_offsets:Dict[str, int] = defaultdict(int)
 
     def __init__(self, class_map:List[ClassMapEntry], impl_map:List[ImplMapEntry],
             parent_map:List[ParentMapEntry]):
@@ -22,6 +23,8 @@ class Tac(object):
         
         for entry in impl_map:
             self.impl_map[entry.class_name] = entry.method_list
+            for i, method in enumerate(self.impl_map[entry.class_name]):
+                self.method_offsets[f"{method.parent}.{method.method_name}"] = 16 + 8 * i
 
         for entry in parent_map:
             self.parent_map[entry.child] = entry.parent
@@ -30,6 +33,7 @@ class Tac(object):
         self.processed_funcs:List[TacFunc] = []
         self.cur_tacfunc = None
         self.num = 0
+        print(self.method_offsets)
 
     def self_reg(self) -> TacReg:
         return self.symbol_table["self"][-1]
@@ -288,7 +292,7 @@ class Tac(object):
             
             ret_reg = self.create_reg()
             func_str = f"{exp.class_type.name}.{exp.get_func_name()}" if exp.class_type is not None else exp.get_func_name()
-            self.cur_tacfunc.append(TacCall(func_str, param_regs, ret_reg))
+            self.cur_tacfunc.append(TacCall(func_str, param_regs, ret_reg, self.method_offsets[exp.get_func_name()]))
             self.cur_tacfunc.append(TacStore(ret_reg, self.declaration_map[exp]))
             return self.declaration_map[exp]
         elif isinstance(exp, Variable):

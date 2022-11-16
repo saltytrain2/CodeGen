@@ -67,16 +67,19 @@ class CFGBlock(object):
         """ 
         We now assign each tacreg a physical register based on the instruction
         This is heavily based on a lot of assumptions on what our tac looks like
-        We know from our tac that no more than two registers will be alive at the same time,
-        allowing us very easily determine register allocation
 
         Some special registers will always be allocated for certain needs, which are shown below
 
-        r11 -> trash register for arithmetic operations
-        r10 -> temporary register for immediates (we wont be using more than per instruction)
+        r12 -> register for calling functions if necessary
+        r13 -> trash register for arithmetic operations
+        r14 -> temporary register for immediates (we wont be using more than 1 per instruction)
+        r15 -> more trash registers
         rcx -> immediate register
         rax -> subroutine return register
         rbp + offset -> stack temporaries
+
+        All other registers are allocated in a greedy manner, in the unoptimized tac all temporaries are spilled
+        so there will be enough space in caller-saved registers for every operation
         """
         offset = 0
         regs_to_alloc:List[TacReg] = []
@@ -91,8 +94,8 @@ class CFGBlock(object):
             elif isinstance(inst, TacRet):
                 pass
             elif isinstance(inst, TacLoadImm):
-                inst.dest.set_preg(PReg("%r10"))
-            elif isinstance(inst, (TacBinOp, TacUnaryOp, TacLoad)):
+                inst.dest.set_preg(PReg("%r14"))
+            elif isinstance(inst, (TacBinOp, TacUnaryOp, TacLoad, TacLoadImm)):
                 regs_to_alloc.append(inst.dest)
 
         
@@ -104,33 +107,50 @@ class CFGBlock(object):
 
         return abs(offset)
 
+    def resolve_stack_discipline(self, reg_allocator:FixedRegisterAllocator):
+        for inst in self.inst_list:
+            if not isinstance(inst, (TacCall, TacSyscall, TacCreate)):
+                continue
+
+            # we want to find all live variables and mark variables that reside in caller-saved registers
+            live_regs:List[PReg] = [
+                reg_allocator.get_physical_mapping(i) for i in inst.live if reg_allocator.get_physical_mapping(i) is not None
+            ]
+            live_volatile_regs:List[PReg] = [i for i in live_regs if i in reg_allocator.get_caller_regs()]
+            inst.save_regs = live_volatile_regs
+        pass
+
 
 class FixedRegisterAllocator(object):
     def __init__(self, interference_graph:Dict[TacReg, Set[TacReg]]=None):
         self.return_reg:PReg = PReg("%rax")
         self.caller_saved:List[PReg] = [
-            PReg("%rdi"), PReg("%rsi"), PReg("%rdx"), PReg("%rcx"), PReg("%r8"), PReg("%r9")
+            PReg("%rdi"), PReg("%rsi"), PReg("%rdx"), PReg("%rcx"), PReg("%r8"), PReg("%r9"), PReg("%r10"), PReg("%r11"), PReg("%rax")
         ]
         self.callee_saved:List[PReg] = [
             PReg("%rbx"), PReg("%r12"), PReg("%r13"), PReg("%r14"), PReg("%r15")
         ]
         self.interference_graph = interference_graph if interference_graph is not None else defaultdict(set)
         self.physical_reg_map:Dict[PReg, List[TacReg]] = defaultdict(list)
-        self.tac_reg_map:Dict[PReg, List[TacReg]] = defaultdict(list)
+        self.tac_reg_map:Dict[TacReg, PReg] = {}
         self.reset()
 
     def get_caller_reg(self, input_reg:TacReg) -> TacReg:
-        for physical_reg in self.caller_saved:
-            # if the register is unused, yay
+        for physical_reg in self.caller_saved[:-1]:
+            # if the register is unused, great
             if not self.physical_reg_map[physical_reg]:
                 self.physical_reg_map[physical_reg].append(input_reg)
                 return physical_reg
             
+            conflict = False
             for tac_reg in self.physical_reg_map[physical_reg]:
                 # we can reuse the register since they do not overlap
-                if tac_reg not in self.interference_graph[input_reg]:
-                    self.physical_reg_map[physical_reg].append(input_reg)
-                    return physical_reg
+                if tac_reg in self.interference_graph[input_reg]:
+                    conflict = True
+            
+            if not conflict:
+                self.physical_reg_map[physical_reg].append(input_reg)
+                return physical_reg
 
         # we fell through, we found nothing
         return None
@@ -142,19 +162,23 @@ class FixedRegisterAllocator(object):
                 self.physical_reg_map[physical_reg].append(input_reg)
                 return physical_reg
             
+            conflict = False
             for tac_reg in self.physical_reg_map[physical_reg]:
                 # we can reuse the register since they do not overlap
-                if tac_reg not in self.interference_graph[input_reg]:
-                    self.physical_reg_map[physical_reg].append(input_reg)
-                    return physical_reg
+                if tac_reg in self.interference_graph[input_reg]:
+                    conflict = True
+            
+            if not conflict:
+                self.physical_reg_map[physical_reg].append(input_reg)
+                return physical_reg
         # we fell through, we found nothing
         return None
     
     def get_caller_regs(self) -> Set[PReg]:
-        return self.caller_saved
+        return set(self.caller_saved)
 
     def get_callee_regs(self) -> Set[PReg]:
-        return self.callee_saved
+        return set(self.callee_saved)
 
     def add_used_reg(self, physical_reg:PReg, treg:TacReg) -> None:
         self.physical_reg_map[physical_reg].append(treg)
@@ -172,9 +196,17 @@ class FixedRegisterAllocator(object):
     def reset(self) -> None:
         self.physical_reg_map.clear()
         self.tac_reg_map.clear()
+
+    def construct_tac_reg_map(self) -> None:
+        for physical_reg in self.physical_reg_map:
+            for tacreg in self.physical_reg_map[physical_reg]:
+                self.tac_reg_map[tacreg] = physical_reg
     
     def update_interference(self, interference:Dict[TacReg, Set[TacReg]]) -> None:
         self.interference_graph = interference
+    
+    def get_physical_mapping(self, treg:TacReg):
+        return self.tac_reg_map[treg] if treg in self.tac_reg_map else None
 
 
 class CFGFunc(object):
@@ -265,6 +297,9 @@ class CFGFunc(object):
         for cfg_block in self.cfg_blocks:
             stack_space = cfg_block.fixed_alloc(self.reg_allocator)
             self.stack_space += stack_space
+        
+        # create a mapping of physical registers to actual registers
+        self.reg_allocator.construct_tac_reg_map()
         pass
 
     def precolor_regs(self) -> None:
@@ -331,4 +366,9 @@ class CFGFunc(object):
             insts.extend(cfg_block.inst_list)
 
         return TacFunc(self.name, self.params, insts, self.stack_space)
+
+    def resolve_stack_discipline(self) -> None:
+        # we want to make sure we are able to push/pop necessary registers when calling functions
+        for cfg_block in self.cfg_blocks:
+            cfg_block.resolve_stack_discipline(self.reg_allocator)
 

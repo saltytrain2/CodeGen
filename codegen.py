@@ -105,27 +105,29 @@ class CodeGen(object):
             asm.append(f"{self.label_allocator.emit_label()}:\n")
         # TODO I currently assume that rax and r11 are trash registers and will never be allocated to variables
         elif isinstance(inst, TacAdd):
-            asm.append(f"\tmovq\t{inst.src2.get_preg_str()}, %r11\n")
+            asm.append(f"\tmovq\t{inst.src2.get_preg_str()}, %r13\n")
             asm.append(f"\taddl\t{inst.src1.get_preg_32_str()}, {inst.src2.get_preg_32_str()}\n")
             asm.append(f"\tmovl\t{inst.src2.get_preg_32_str()}, {inst.dest.get_preg_32_str()}\n")
-            asm.append(f"\tmovq\t%r11, {inst.src2.get_preg_str()}\n")
+            asm.append(f"\tmovq\t%r13, {inst.src2.get_preg_str()}\n")
         elif isinstance(inst, TacSub):
-            asm.append(f"\tmovq\t{inst.src2.get_preg_str()}, %r11\n")
+            asm.append(f"\tmovq\t{inst.src2.get_preg_str()}, %r13\n")
             asm.append(f"\tsubl\t{inst.src1.get_preg_32_str()}, {inst.src2.get_preg_32_str()}\n")
             asm.append(f"\tmovl\t{inst.src2.get_preg_32_str()}, {inst.dest.get_preg_32_str()}\n")
-            asm.append(f"\tmovq\t%r11, {inst.src2.get_preg_str()}\n")
+            asm.append(f"\tmovq\t%r13, {inst.src2.get_preg_str()}\n")
         elif isinstance(inst, TacMul):
-            asm.append(f"\tmovq\t{inst.src2.get_preg_str()}, %r11\n")
+            asm.append(f"\tmovq\t{inst.src2.get_preg_str()}, %r13\n")
             asm.append(f"\timull\t{inst.src1.get_preg_32_str()}, {inst.src2.get_preg_32_str()}\n")
             asm.append(f"\tmovl\t{inst.src2.get_preg_32_str()}, {inst.dest.get_preg_32_str()}\n")
-            asm.append(f"\tmovq\t%r11, {inst.src2.get_preg_str()}\n")
+            asm.append(f"\tmovq\t%r13, {inst.src2.get_preg_str()}\n")
         elif isinstance(inst, TacDiv):
-            asm.append("\tmovq\t%rdx, %r11\n")
+            asm.append("\tmovq\t%rdx, %r13\n")
+            asm.append("\tmovq\t%rax, %r15\n")
             asm.append("\txor\t%edx, %edx\n")
             asm.append(f"\tmovl\t{inst.src1.get_preg_32_str()}, %eax\n")
             asm.append(f"\tidivl\t{inst.src2.get_preg_32_str()}\n")
             asm.append(f"\tmovl\t%eax, {inst.dest.get_preg_32_str()}\n")
-            asm.append("\tmovq\t%r11, %rdx\n")
+            asm.append("\tmovq\t%r13, %rdx\n")
+            asm.append("\tmovq\t%r15, %rax\n")
         elif isinstance(inst, TacLoad):
             mem_reg = inst.src.get_preg_str() if inst.src.isstack else f"{inst.offset*8 if inst.offset is not None else 0}({inst.src.get_preg_str()})"
             asm.append(f"\tmovq\t{mem_reg}, {inst.dest.get_preg_str()}\n")
@@ -134,12 +136,12 @@ class CodeGen(object):
             asm.append(f"\tmovq\t{inst.src.get_preg_str()}, {mem_reg})\n")
         elif isinstance(inst, TacLoadImm):
             if isinstance(inst.imm, TacImmLabel):
-                asm.append(f"\tmovq\t{inst.imm.val}(%rip), %r10\n")
+                asm.append(f"\tmovq\t{inst.imm.val}(%rip), %r14\n")
             elif isinstance(inst.imm, TacStr):
                 str_label = self.string_allocator.add_string(inst.imm.val)
-                asm.append(f"\tmovq\t{str_label}(%rip), %r10\n")
+                asm.append(f"\tmovq\t{str_label}(%rip), %r14\n")
             elif isinstance(inst.imm, TacImm):
-                asm.append(f"\tmovq\t${inst.imm.val}, %r10\n")
+                asm.append(f"\tmovq\t${inst.imm.val}, %r14\n")
         elif isinstance(inst, (TacCall, TacSyscall)):
             # TODO assume that all clobbered registers are getting clobbered
             stack:List[str] = []
@@ -153,15 +155,15 @@ class CodeGen(object):
             i = 0
             while params and i:
                 param = params.pop()
-                asm.append(f"\tmovq\t{param.get_preg_str()}, {param_registers[i]}")
+                asm.append(f"\tmovq\t{param.get_preg_str()}, {param_registers[i]}\n")
                 i += 1
             
             # if there are any leftover parameters, push them onto the stack
             for param in params:
                 if param.isstack:
-                    asm.append(f"\tmovq\t{param.get_preg_str()}, %r11\n")
-                    asm.append("\tpushq\t%r11\n")
-                    stack.append("%r11")
+                    asm.append(f"\tmovq\t{param.get_preg_str()}, %r15\n")
+                    asm.append("\tpushq\t%r15\n")
+                    stack.append("%r15")
                 else:
                     asm.append(f"\tpushq\t{param.get_preg_str()}\n")
                     stack.append(param.get_preg_str())
@@ -173,12 +175,12 @@ class CodeGen(object):
                     asm.append("\txor\t%eax, %eax\n")
                 asm.append(f"\tcall\t{inst.func}\n")
             elif "." in inst.func:
-                class_name = inst.func[:inst.func.index(".")]
-                asm.append(f"\tmovq\t${class_name}..vtable(%rip), %r10\n")
-                asm.append(f"\tcall\t*%r10\n")
+                asm.append(f"\tcall\t{inst.func}\n")
             else:
-                asm.append(f"\tmovq\t%rdi, %r10\n")
-                asm.append(f"\tcall\t*%r10\n")
+                asm.append(f"\tmovq\t%rdi, %r12\n")
+                asm.append(f"\tmovq\t${inst.offset}, %r13\n")
+                asm.append(f"\taddq\t%r13, %r12\n")
+                asm.append(f"\tcall\t*%r12\n")
 
             # pop off everything in the stack
             while stack:

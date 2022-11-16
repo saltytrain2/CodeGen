@@ -294,12 +294,13 @@ class TacIcmp(TacInst):
 
 
 class TacCall(TacInst):
-    def __init__(self, func:str, args:List[TacReg], dest:TacReg):
+    def __init__(self, func:str, args:List[TacReg], dest:TacReg, offset:int=None):
         super().__init__(TacOp.CALL, {arg for arg in args}, {dest})
         self.func = func
         self.args = args
         self.dest = dest
         self.save_regs:List[PReg] = []
+        self.offset = offset
 
     def __repr__(self) -> str:
         inst_str = f"{repr(self.dest)} = call {self.func}({', '.join(repr(arg) for arg in self.args)})"
@@ -395,6 +396,7 @@ class TacCreate(TacInst):
         super().__init__(TacOp.CREATE, None, {dest})
         self.object = object
         self.dest = dest
+        self.save_regs:List[PReg] = []
 
     def __repr__(self) -> str:
         inst_str = f"{repr(self.dest)} = create {self.object}"

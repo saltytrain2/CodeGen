@@ -115,6 +115,7 @@ class TacValue(object):
 
 class TacReg(TacValue):
     def __init__(self, num:int, isstack:bool=False):
+        super().__init__()
         self.num = num
         self.isstack = isstack
         self.live_start = None
@@ -141,9 +142,10 @@ class TacReg(TacValue):
 
 class TacImm(TacValue):
     def __init__(self, val:int):
+        super().__init__()
         self.val = val
         # TODO this is because of PA5
-        self.set_preg(PReg("%rcx"))
+        self.set_preg(PReg("%r10"))
 
     def __repr__(self) -> str:
         return "$" + str(self.val)
@@ -151,7 +153,9 @@ class TacImm(TacValue):
 
 class TacStr(TacValue):
     def __init__(self, val:str):
+        super().__init__()
         self.val = val
+        self.set_preg(PReg("%r10"))
 
     def __repr__(self) -> str:
         return f"\"{self.val}\""
@@ -283,7 +287,7 @@ class TacCall(TacInst):
         self.func = func
         self.args = args
         self.dest = dest
-        self.save_regs:List[PReg] = None
+        self.save_regs:List[PReg] = []
 
     def __repr__(self) -> str:
         inst_str = f"{repr(self.dest)} = call {self.func}({', '.join(repr(arg) for arg in self.args)})"

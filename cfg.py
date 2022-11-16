@@ -19,7 +19,11 @@ class CFG(object):
             #cfg_func.print_interference()
     
     def debug_interference(self) -> None:
-        pass
+        for cfg_func in self.cfg_list:
+            print(cfg_func.name)
+            cfg_func.print_interference()
+            print()
+        pass 
     
     def optimize(self) -> None:
         self.set_dominators()

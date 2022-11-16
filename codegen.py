@@ -1,5 +1,5 @@
 from tacnodes import *
-from cfgnodes import CFGFunc
+from cfgnodes import CFGFunc, FixedRegisterAllocator
 from typing import List
 from collections import defaultdict
 
@@ -20,7 +20,7 @@ class StringAllocator(object):
         self.string_num = 0
 
     def add_string(self, string_name:str) -> str:
-        label = ".LC" + self.string_num
+        label = ".LC" + str(self.string_num)
         self.string_map[label] = string_name
         return label
 
@@ -35,7 +35,7 @@ class CodeGen(object):
     def __init__(self, impl_map:List[ImplMapEntry], tacfuncs:List[TacFunc]):
         self.impl_map = impl_map
         self.tacfuncs = tacfuncs
-        self.reg_allocator = RegisterAllocator()
+        self.reg_allocator = FixedRegisterAllocator()
         self.label_allocator = LabelAllocator()
         self.string_allocator = StringAllocator()
     
@@ -45,10 +45,10 @@ class CodeGen(object):
         
         # generate the vtables
         for impl_map_entry in self.impl_map:
-            gen_x86_vtable(asm, impl_map_entry)
+            self.gen_x86_vtable(asm, impl_map_entry)
 
         for tacfunc in self.tacfuncs:
-            gen_x86_tacfunc(asm, tacfunc)
+            self.gen_x86_tacfunc(asm, tacfunc)
 
         # now generate the string labels
         self.string_allocator.gen_x86(asm)
@@ -63,7 +63,7 @@ class CodeGen(object):
         # next two entries are for the class string and the constructor
         str_label = self.string_allocator.add_string(class_name)
         asm.append(f"\t.quad {str_label}\n")
-        asm.append(f"\t.quad {clas_name}..new\n")
+        asm.append(f"\t.quad {class_name}..new\n")
 
         # now for all the methods
         for method in impl_map_entry.method_list:
@@ -78,24 +78,19 @@ class CodeGen(object):
         asm.append("\tmovq\t%rsp, %rbp\n")
 
         # allocate all space on the stack
-        offset = 0
-        for inst in tacfunc.inst_list:
-            if not isinstance(inst, TacAlloc):
-                break
-            offset += 8
-        asm.append("\tsubq\t${offset}, %rsp\n")
+        asm.append(f"\tsubq\t${tacfunc.stack_space}, %rsp\n")
         
         # push all the callee saved registers into the stack
         #callee_regs = ["%rbx", "%r12", "%r13", "%r14", "%r15"]
         #for reg in callee_regs:
         #    asm.append(f"\tpushq\t{reg}\n")
 
-        for inst in tacfunc.inst_list:
+        for inst in tacfunc.insts:
             self.gen_x86_inst(asm, inst)
         
         # pop all the callee saved registers off the stack
-        while callee_regs:
-            asm.append(f"\tpopq\t{callee_regs.pop()}\n")
+        # while callee_regs:
+        #     asm.append(f"\tpopq\t{callee_regs.pop()}\n")
         # return address handling
         asm.append("\tmovq\t%rbp, %rsp\n")
         asm.append("\tpopq\t%rbp\n")
@@ -129,10 +124,10 @@ class CodeGen(object):
             asm.append("\tmovq\t%r11, %rdx\n")
         elif isinstance(inst, TacLoad):
             mem_reg = inst.src.get_preg_str() if inst.src.isstack else f"{inst.offset}({inst.src.get_preg_str()})"
-            asm.append(f"\tmovq\tmem_reg, {inst.dest.get_preg_str()}\n")
+            asm.append(f"\tmovq\t{mem_reg}, {inst.dest.get_preg_str()}\n")
         elif isinstance(inst, TacStore):
             mem_reg = inst.dest.get_preg_str() if inst.dest.isstack else f"{inst.offset}({inst.dest.get_preg_str()})"
-            asm.append(f"\tmovq\tmem_reg, {offset_str}({inst.src.get_preg_str()})\n")
+            asm.append(f"\tmovq\t{inst.src.get_preg_str()}, {mem_reg})\n")
         elif isinstance(inst, TacCall):
             # TODO assume that all clobbered registers are getting clobbered
             save_regs = inst.save_regs
@@ -140,20 +135,6 @@ class CodeGen(object):
             for reg in save_regs:
                 asm.append(f"\tpushq\t{reg.get_name()}\n")
                 stack.append(reg.get_name())
-
-            # move the parameters into the registers
-            param_regs = ["%rdi", "%rsi", "%rdx", "%rcx", "%r8", "%r9"]
-            for i, param in enumerate(inst.args):
-                if i < 6:
-                    asm.append(f"\tmovq\t{}, {param_regs[i]}\n")
-                    pass
-                elif param.isstack:
-                    asm.append(f"\tmovq\t{param.get_preg_str()}, %r11\n")
-                    asm.append(f"\tpushq\t%r11\n")
-                    stack.append("%r11\n")
-                else:
-                    asm.append(f"\tpushq\t{param.get_preg_str()}\n")
-                    stack.append(f"%{param.get_preg_str()}\n")
 
             # get the vtable
             # there should only be a . in the function name if this is a static dispatch
@@ -168,7 +149,7 @@ class CodeGen(object):
             while stack:
                 asm.append(f"\tpopq\t{stack.pop()}\n")
         elif isinstance(inst, TacRet):
-            asm.append(f"\tmovq\t{inst.get_preg_str()}, %rax\n")
+            asm.append(f"\tmovq\t{inst.src.get_preg_str()}, %rax\n")
         elif isinstance(inst, TacSyscall):
             pass 
         

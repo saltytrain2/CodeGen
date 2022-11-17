@@ -70,6 +70,7 @@ class CFGBlock(object):
 
         Some special registers will always be allocated for certain needs, which are shown below
 
+        r11 -> self pointer
         r12 -> register for calling functions if necessary
         r13 -> trash register for arithmetic operations
         r14 -> temporary register for immediates (we wont be using more than 1 per instruction)
@@ -88,14 +89,11 @@ class CFGBlock(object):
             if isinstance(inst, TacAlloc):
                 inst.dest.set_preg(PReg("%rbp", offset))
                 offset -= 8
-            elif isinstance(inst, (TacCreate, TacCall, TacSyscall)):
-                # TODO this might need to change
-                inst.dest.set_preg(PReg("%rax"))
             elif isinstance(inst, TacRet):
                 pass
-            elif isinstance(inst, TacLoadImm):
-                inst.dest.set_preg(PReg("%r14"))
-            elif isinstance(inst, (TacBinOp, TacUnaryOp, TacLoad, TacLoadImm)):
+            elif isinstance(inst, TacStoreSelf):
+                inst.dest.set_preg(PReg("%rdi"))
+            elif isinstance(inst, (TacCreate, TacCall, TacSyscall, TacLoadImm, TacBinOp, TacUnaryOp, TacLoad, TacLoadImm)):
                 regs_to_alloc.append(inst.dest)
 
         
@@ -124,6 +122,7 @@ class CFGBlock(object):
 class FixedRegisterAllocator(object):
     def __init__(self, interference_graph:Dict[TacReg, Set[TacReg]]=None):
         self.return_reg:PReg = PReg("%rax")
+        self.self_reg:PReg = PReg("%r11")
         self.caller_saved:List[PReg] = [
             PReg("%rdi"), PReg("%rsi"), PReg("%rdx"), PReg("%rcx"), PReg("%r8"), PReg("%r9"), PReg("%r10"), PReg("%r11"), PReg("%rax")
         ]
@@ -136,7 +135,7 @@ class FixedRegisterAllocator(object):
         self.reset()
 
     def get_caller_reg(self, input_reg:TacReg) -> TacReg:
-        for physical_reg in self.caller_saved[:-1]:
+        for physical_reg in self.caller_saved[1:-1]:
             # if the register is unused, great
             if not self.physical_reg_map[physical_reg]:
                 self.physical_reg_map[physical_reg].append(input_reg)
@@ -189,6 +188,7 @@ class FixedRegisterAllocator(object):
         if reg is not None:
             return reg
 
+        raise Exception("We ran out of caller saved regs, you need to start using the other registers")
         # try to get a callee-saved register instead
         reg = self.get_callee_reg(tacreg)
         return reg
@@ -364,6 +364,10 @@ class CFGFunc(object):
         insts = []
         for cfg_block in self.cfg_blocks:
             insts.extend(cfg_block.inst_list)
+
+        # align the stack properly
+        if self.stack_space % 16 != 0:
+            self.stack_space += 8
 
         return TacFunc(self.name, self.params, insts, self.stack_space)
 

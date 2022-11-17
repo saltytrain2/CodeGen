@@ -53,14 +53,15 @@ class CFGBlock(object):
     
     def calc_liveness(self, out_set=None) -> bool:
         changed = False
-        self.live_out = self.live_out.union(*[i.get_live_out() for i in self.succs])
-        succ_live = self.live_out
+        self.live_out = self.live_out.union(*[i.get_live_in() for i in self.succs])
+        succ_live_in = self.live_out
         for inst in reversed(self.inst_list):
-            nodechanged = inst.update_live_set(succ_live)
-            if not changed:
+            nodechanged = inst.update_live_set(succ_live_in)
+            if nodechanged:
                 changed = nodechanged
-            succ_live = inst.get_live_set()
-
+            succ_live_in = inst.get_live_in()
+        
+        self.live_in = self.inst_list[0].get_live_in()
         return changed
 
     def fixed_alloc(self, reg_allocator:FixedRegisterAllocator) -> int:
@@ -282,7 +283,7 @@ class CFGFunc(object):
         self.reg_allocator.update_interference(self.interference)
 
         # first handle the parameters
-        offset = 8
+        offset = 16
         param_regs = ["%rdi", "%rsi", "%rdx", "%rcx", "%r8", "%r9"]
         for i, param in enumerate(self.params):
             if i < 7:
@@ -291,7 +292,7 @@ class CFGFunc(object):
                 param.set_preg(PReg("%rbp", offset))
                 offset += 8
         
-        self.stack_space += offset - 8
+        self.stack_space += offset - 16
 
         # now handle everything else
         for cfg_block in self.cfg_blocks:
@@ -337,7 +338,7 @@ class CFGFunc(object):
         # through these live sets, generate the resulting interference graph
         for cfg_block in self.cfg_blocks:
             for inst in cfg_block.inst_list:
-                live_regs = inst.get_live_set()
+                live_regs = inst.get_live_out()
                 for reg in live_regs:
                     self.interference[reg].update(live_regs)
                     self.interference[reg].remove(reg)

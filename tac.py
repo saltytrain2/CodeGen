@@ -1,7 +1,6 @@
 from __future__ import annotations
 from typing import List, Tuple
 from tacnodes import *
-from coolbase import BASE_CLASS_METHODS, MAIN_METHOD
 
 
 class Tac(object):
@@ -32,7 +31,7 @@ class Tac(object):
             self.parent_map[entry.child] = entry.parent
 
         self.declaration_map:Dict[Expression, TacReg] = defaultdict(TacReg, num=-1)
-        self.processed_funcs:List[TacFunc] = [MAIN_METHOD]
+        self.processed_funcs:List[TacFunc] = []
         self.cur_tacfunc = None
         self.num = 0
         print(self.method_offsets)
@@ -43,7 +42,6 @@ class Tac(object):
     def tacgen(self) -> None:
         for c in self.impl_map:
             if c in {"Object", "Bool", "String", "Int", "IO"}:
-                self.processed_funcs.extend(BASE_CLASS_METHODS[c])
                 continue
 
             self.cur_class = c
@@ -81,7 +79,7 @@ class Tac(object):
         calloc_elems_reg = self.create_reg()
         calloc_size_reg = self.create_reg()
         temp_reg = self.create_reg()
-        self_reg = self.create_reg(True)
+        self_reg = self.create_reg()
         self.cur_tacfunc.append(TacLoadImm(TacImm(num_elems), calloc_elems_reg))
         self.cur_tacfunc.append(TacLoadImm(TacImm(size), calloc_size_reg))
         self.cur_tacfunc.append(TacSyscall("calloc@PLT", [calloc_elems_reg, calloc_size_reg], temp_reg))

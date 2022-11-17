@@ -180,19 +180,28 @@ class TacInst(object):
         self.op = op
         self.livegen = {i for i in livegen if isinstance(i, TacReg) and not i.isstack} if livegen is not None else set()
         self.livekill = {i for i in livekill if isinstance(i, TacReg) and not i.isstack} if livekill is not None else set()
+        self.live_in = set()
+        self.live_out = set()
         self.live:Set[TacReg] = set.difference(self.livegen, self.livekill)
 
     def __repr__(self) -> str:
         return self.op.name.lower()
     
-    def get_live_set(self) -> Set[TacReg]:
-        return self.live
+    def get_live_out(self) -> Set[TacReg]:
+        return self.live_out
+    
+    def get_live_in(self) -> Set[TacReg]:
+        return self.live_in
+    
+    def get_intersection(self) -> Set[TacReg]:
+        return set.union(self.live_out, self.live_in)
 
-    def update_live_set(self, succ_live:Set[TacReg]) -> bool:
-        old_live = self.live.copy()
-        self.live.update(succ_live)
-        self.live.difference_update(self.livekill)
-        return old_live != self.live
+    def update_live_set(self, succ_live_in:Set[TacReg]) -> bool:
+        old_live_in = self.live_in.copy()
+        old_live_out = self.live_out.copy()
+        self.live_in = set.union(self.livegen, set.difference(self.live_out, self.livekill))
+        self.live_out = succ_live_in.copy()
+        return old_live_in != self.live_in or old_live_out != self.live_out
 
 
 class TacLabel(TacInst):
@@ -492,7 +501,7 @@ class TacStoreSelf(TacInst):
     Special store that puts the self object into the preallocated self register
     """
     def __init__(self, self_obj:TacReg, dest:TacReg):
-        super().__init__(TacOp.STORESELF, {self_obj}, {dest})
+        super().__init__(TacOp.STORESELF, {dest, self_obj}, None)
         self.self_obj = self_obj
         self.dest = dest
 

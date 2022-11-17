@@ -68,7 +68,7 @@ class CodeGen(object):
     
     def gen_x86_vtable(self, asm:List[str], impl_map_entry:ImplMapEntry):
         class_name = impl_map_entry.class_name
-        asm.append(f"\t.text\n\t.globl {class_name}..vtable\n")
+        asm.append(f"\t.data\n\t.globl {class_name}..vtable\n")
         asm.append(f"{class_name}..vtable:\n")
         
         # next two entries are for the class string and the constructor

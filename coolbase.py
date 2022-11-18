@@ -16,7 +16,8 @@ IO.out_int:
 \tmovq\t$8, %rcx
 \tpushq\t%rdi
 \tsubq\t%rcx, %rsp
-\tmovq\t.LIOINT(%rip), %rdi
+\tleaq\t.LIOINT(%rip), %rdi
+\txor\t%eax, %eax
 \tcall\tprintf@PLT
 \tmovq\t$8, %rcx
 \taddq\t%rcx, %rsp
@@ -32,11 +33,11 @@ def _build_io_outstring():
 IO.out_string:
 \tpushq\t%rbp
 \tmovq\t%rsp, %rbp
-\tpushq\t%rdi
-\tmovq\t24(%rdi), %rdi
 \tmovq\t$8, %rcx
+\tpushq\t%rdi
+\tmovq\t24(%rsi), %rdi
 \tsubq\t%rcx, %rsp
-\tcall\tprintf@PLT
+\tcall\tcooloutstr
 \tmovq\t$8, %rcx
 \taddq\t%rcx, %rsp
 \tpopq\t%rax
@@ -49,9 +50,43 @@ IO.out_string:
 def _build_io_inint():
     return """\
 \t.text
+\t.section\t.rodata
+.LCIOININT:
+\t.asciz " %ld"
+\t.text
 \t.globl IO.in_int
 IO.in_int:
-\txor %eax, %eax
+\tpushq\t%rbp
+\tmovq\t%rsp, %rbp
+\tmovq\t$8, %rcx
+\tpushq\t%rdi
+\tsubq\t%rcx, %rsp
+\tcall\tInt..new
+\tmovq\t$8, %rcx
+\taddq\t%rcx, %rsp
+\tpushq\t%rax
+\tmovq\t$1, %rsi
+\tmovq\t$4096, %rdi
+\tcall\tcalloc
+\tmovq\t%rax, %rdi
+\tmovq\t$4096, %rsi
+\tmovq\tstdin(%rip), %rdx
+\tcall\tfgets
+\tmovq\t%rax, %rdi
+\tleaq\t.LCIOININT(%rip), %rsi
+\tpopq\t%r8
+\tleaq\t24(%r8), %rdx
+\tpushq\t%r8
+\tcall\tsscanf
+\tmovq\t$0, %rsi
+\tcmpq\t$2147483647, %rdx
+\tcmovg\t%rsi, %rdx
+\tcmpq\t$-2147483648, %rdx
+\tcmovl\t%rsi, %rdx
+\tpopq\t%rax
+\tpopq\t%rdi
+\tmovq\t%rbp, %rsp
+\tpopq\t%rbp
 \tret
 
     """
@@ -62,7 +97,19 @@ def _build_io_instring():
 \t.text
 \t.globl IO.in_string
 IO.in_string:
-\txor %eax, %eax
+\tpushq\t%rbp
+\tmovq\t%rbp, %rsp
+\tcall\tcoolgetstr
+\tmovq\t$8, %rcx
+\tpushq\t%rax
+\tsubq\t%rcx, %rsp
+\tcall\tString..new
+\tmovq\t$8, %rcx
+\tsubq\t%rcx, %rsp
+\tpopq\t%rdi
+\tmovq\t%rdi, 24(%rax)
+\tmovq\t%rsp, %rbp
+\tpopq\t%rbp
 \tret
     
     """
@@ -77,7 +124,7 @@ def _build_object_abort():
 \t.globl Object.abort
 Object.abort:
 \tpushq\t%rbp
-\tmovq\t.LCObort(%rip), %rdi
+\tleaq\t.LCObort(%rip), %rdi
 \txor\t%eax, %eax
 \tcall\tprintf@PLT
 \txor\t%edi, %edi
@@ -121,11 +168,11 @@ Object.copy:
 \tsubq\t%rsi, %rsp
 \tmovq\t8(%rdi), %rdi
 \tcall\tcalloc
-\tpopq\t%rdi
 \tmovq\t$8, %rsi
 \taddq\t%rsi, %rsp
+\tpopq\t%rdi
 \tmovq\t%rax, %rdx
-\tmovq\t8(%rdx), %r9
+\tmovq\t8(%rdi), %r9
 \tmovq\t%rdx, %rcx
 .Lcopy1:
 \tmovq\t0(%rdi), %r10
@@ -147,7 +194,18 @@ def _build_string_concat():
 \t.text
 \t.globl String.concat
 String.concat:
-\txor %eax, %eax
+\tpushq\t%rbp
+\tmovq\t%rsp, %rbp
+\tpushq\t%rdi
+\tpushq\t%rsi
+\tmovq\t$4096, %rdi
+\tmovq\t$1, %rsi
+\tcall\tcalloc
+\tpopq\t%rsi
+\tpopq\t%rdi
+
+\tcall\tString..new
+\tpopq\t%rbp
 \tret
 
     """
@@ -160,21 +218,18 @@ def _build_string_length():
 String.length:
 \tpushq\t%rbp
 \tmovq\t%rsp, %rbp
-\tpushq\t%rdi
+\tpushq\t%r15
+\tmovq\t24(%rdi), %rdi
+\txor\t%eax, %eax
+\tcall\tcoolstrlen
 \tmovq\t$8, %rcx
+\tpushq\t%rax
 \tsubq\t%rcx, %rsp
 \tcall\tInt..new
 \tmovq\t$8, %rcx
 \taddq\t%rcx, %rsp
-\tpopq\t%rsi
-\tmovq\t%rax, %r9
-\tmovq\t24(%rsi), %rdi
-\txor\t%eax, %eax
-\trepne\tscasb
-\tmovq\t24(%rsi), %rsi
-\tsubq\t%rsi, %rdi
-\tmovq\t%rdi, 24(%r9)
-\tmovq\t%r9, %rax
+\tpopq\t%rdi
+\tmovq\t%rdi, 24(%rax)
 \tpopq\t%rbp
 \tret
 
@@ -204,7 +259,7 @@ IO..new:
 \tmovq\t%rdi, 0(%rax)
 \tdec\t%rdi
 \tmovq\t%rdi, 8(%rax)
-\tmovq\tIO..vtable(%rip), %rdi
+\tleaq\tIO..vtable(%rip), %rdi
 \tmovq\t%rdi, 16(%rax)
 \tpopq\t%rbp
 \tret
@@ -222,7 +277,7 @@ Object..new:
 \tmovq\t$3, %rdi
 \tmovq\t%rdi, 0(%rax)
 \tmovq\t%rdi, 8(%rax)
-\tmovq\tObject..vtable(%rip), %rdi
+\tleaq\tObject..vtable(%rip), %rdi
 \tmovq\t%rdi, 16(%rax)
 \tpopq\t%rbp
 \tret
@@ -242,7 +297,7 @@ Int..new:
 \tmovq\t%rdi, 0(%rax)
 \tmovq\t$4, %rdi
 \tmovq\t%rdi, 8(%rax)
-\tmovq\tInt..vtable(%rip), %rdi
+\tleaq\tInt..vtable(%rip), %rdi
 \tmovq\t%rdi, 16(%rax)
 \txor\t%edi, %edi
 \tmovq\t%rdi, 24(%rax)
@@ -268,7 +323,7 @@ String..new:
 \tmovq\t%rdi, 0(%rax)
 \tmovq\t$4, %rdi
 \tmovq\t%rdi, 8(%rax)
-\tmovq\tString..vtable(%rip), %rdi
+\tleaq\tString..vtable(%rip), %rdi
 \tmovq\t%rdi, 16(%rax)
 \tmovq\t.LStringNew(%rip), %rdi
 \tmovq\t%rdi, 24(%rax)
@@ -290,7 +345,7 @@ Bool..new:
 \tmovq\t%rdi, 0(%rax)
 \tmovq\t$4, %rdi
 \tmovq\t%rdi, 8(%rax)
-\tmovq\tBool..vtable(%rip), %rdi
+\tleaq\tBool..vtable(%rip), %rdi
 \tmovq\t%rdi, 16(%rax)
 \txor\t%edi, %edi
 \tmovq\t%rdi, 24(%rax)
@@ -304,6 +359,8 @@ def _build_main():
 \t.text
 \t.globl main
 main:
+\tpushq %rbp
+\tmovq %rsp, %rbp
 \tcall\tMain..new
 \tmovq\t%rax, %rdi
 \tcall\tMain.main
@@ -472,6 +529,319 @@ le_end:
 
     """
 
+def _build_cooloutstr():
+    return """\
+\t.text
+\t.globl cooloutstr
+\t.type\tcooloutstr, @function
+cooloutstr:
+.LFB0:
+\t.cfi_startproc
+\tpushq   %rbp
+\t.cfi_def_cfa_offset 16
+\t.cfi_offset 6, -16
+\tmovq    %rsp, %rbp
+\t.cfi_def_cfa_register 6
+\tsubq    $32, %rsp
+\tmovq    %rdi, -24(%rbp)
+\tmovl    $0, -4(%rbp)
+\tjmp     .LCOS2
+.LCOS5:
+\tmovl    -4(%rbp), %eax
+\tcltq
+\taddq    -24(%rbp), %rax
+\tmovzbl  (%rax), %eax
+\tcmpb    $92, %al
+\tjne     .LCOS3
+\tmovl    -4(%rbp), %eax
+\tcltq
+\taddq    $1, %rax
+\taddq    -24(%rbp), %rax
+\tmovzbl  (%rax), %eax
+\tcmpb    $110, %al
+\tjne     .LCOS3
+\tmovq    stdout(%rip), %rax
+\tmovq    %rax, %rsi
+\tmovl    $10, %edi
+\tcall    fputc
+\taddl    $2, -4(%rbp)
+\tjmp     .LCOS2
+.LCOS3:
+\tmovl    -4(%rbp), %eax
+\tcltq
+\taddq    -24(%rbp), %rax
+\tmovzbl  (%rax), %eax
+\tcmpb    $92, %al
+\tjne     .LCOS4
+\tmovl    -4(%rbp), %eax
+\tcltq
+\taddq    $1, %rax
+\taddq    -24(%rbp), %rax
+\tmovzbl  (%rax), %eax
+\tcmpb    $116, %al
+\tjne     .LCOS4
+\tmovq    stdout(%rip), %rax
+\tmovq    %rax, %rsi
+\tmovl    $9, %edi
+\tcall    fputc
+\taddl    $2, -4(%rbp)
+\tjmp     .LCOS2
+.LCOS4:
+\tmovq    stdout(%rip), %rdx
+\tmovl    -4(%rbp), %eax
+\tcltq
+\taddq    -24(%rbp), %rax
+\tmovzbl  (%rax), %eax
+\tmovsbl  %al, %eax
+\tmovq    %rdx, %rsi
+\tmovl    %eax, %edi
+\tcall    fputc
+\taddl    $1, -4(%rbp)
+.LCOS2:
+\tmovl    -4(%rbp), %eax
+\tcltq
+\taddq    -24(%rbp), %rax
+\tmovzbl  (%rax), %eax
+\ttestb   %al, %al
+\tjne     .LCOS5
+\tmovq    stdout(%rip), %rax
+\tmovq    %rax, %rdi
+\tcall    fflush
+\tleave
+\t.cfi_def_cfa 7, 8
+\tret
+\t.cfi_endproc
+.LFE0:
+\t.size   cooloutstr, .-cooloutstr
+
+"""
+
+def _build_coolstrlen():
+    return """\
+\t.text
+\t.globl coolstrlen
+\t.type   coolstrlen, @function
+coolstrlen:
+.LFB1:
+\t.cfi_startproc
+\tpushq   %rbp
+\t.cfi_def_cfa_offset 16
+\t.cfi_offset 6, -16
+\tmovq    %rsp, %rbp
+\t.cfi_def_cfa_register 6
+\tmovq    %rdi, -24(%rbp)
+\tmovl    $0, -4(%rbp)
+\tjmp     .LCSL7
+.LCSL8:
+\tmovl    -4(%rbp), %eax
+\taddl    $1, %eax
+\tmovl    %eax, -4(%rbp)
+.LCSL7:
+\tmovl    -4(%rbp), %eax
+\tmov     %eax, %eax
+\taddq    -24(%rbp), %rax
+\tmovzbl  (%rax), %eax
+\ttestb   %al, %al
+\tjne     .LCSL8
+\tmovl    -4(%rbp), %eax
+\tleave
+\t.cfi_def_cfa 7, 8
+\tret
+\t.cfi_endproc
+.LFE1:
+\t.size   coolstrlen, .-coolstrlen
+        
+        """
+
+def _build_coolstrcat():
+    return """\
+\t.text
+\t.section\t.rodata
+\t.LCSCC0:
+\t.asciz "%s%s"
+\t.text
+\t.globl coolstrcat
+\t.type\tcoolstrcat, @function
+coolstrcat:
+.LFB2:
+\t.cfi_startproc
+\tpushq   %rbp
+\t.cfi_def_cfa_offset 16
+\t.cfi_offset 6, -16
+\tmovq    %rsp, %rbp
+\t.cfi_def_cfa_register 6
+\tpushq   %rbx
+\tsubq    $40, %rsp
+\tmovq    %rdi, -40(%rbp)
+\tmovq    %rsi, -48(%rbp)
+\tcmpq    $0, -40(%rbp)
+\tjne     .LCSC10
+\t.cfi_offset 3, -24
+\tmovq    -48(%rbp), %rax
+\tjmp     .LCSC11
+.LCSC10:
+\tcmpq    $0, -48(%rbp)
+\tjne     .LCSC12
+\tmovq    -40(%rbp), %rax
+\tjmp     .LCSC11
+.LCSC12:
+\tmovq    -40(%rbp), %rax
+\tmovq    %rax, %rdi
+\tcall    coolstrlen
+\tmovl    %eax, %ebx
+\tmovq    -48(%rbp), %rax
+\tmovq    %rax, %rdi
+\tcall    coolstrlen
+\tleal    (%rbx,%rax), %eax
+\taddl    $1, %eax
+\tmovl    %eax, -20(%rbp)
+\tmovl    -20(%rbp), %eax
+\tcltq
+\tmovl    $1, %esi
+\tmovq    %rax, %rdi
+\tcall    calloc
+\tmovq    %rax, -32(%rbp)
+\tleal    .LCSCC0(%rip), %edx
+\tmovl    -20(%rbp), %eax
+\tmovslq  %eax, %rbx
+\tmovq    -48(%rbp), %rsi
+\tmovq    -40(%rbp), %rcx
+\tmovq    -32(%rbp), %rax
+\tmovq    %rsi, %r8
+\tmovq    %rbx, %rsi
+\tmovq    %rax, %rdi
+\tmovl    $0, %eax
+\tcall    snprintf
+\tmovq    -32(%rbp), %rax
+.LCSC11:
+\taddq    $40, %rsp
+\tpopq    %rbx
+\tleave
+\t.cfi_def_cfa 7, 8
+\tret
+\t.cfi_endproc
+.LFE2:
+\t.size   coolstrcat, .-coolstrcat
+"""
+    pass
+
+
+def _build_coolsubstr():
+    return """\
+\t.text
+\t.globl coolsubstr
+\t.type\tcoolsubstr, @function
+coolsubstr:
+.LFB4:
+\t.cfi_startproc
+\tpushq\t%rbp
+\t.cfi_def_cfa_offset 16
+\t.cfi_offset 6, -16
+\tmovq\t%rsp, %rbp
+\t.cfi_def_cfa_register 6
+\tsubq\t$48, %rsp
+\tmovq\t%rdi, -24(%rbp)
+\tmovq\t%rsi, -32(%rbp)
+\tmovq\t%rdx, -40(%rbp)
+\tmovq\t-24(%rbp), %rax
+\tmovq\t%rax, %rdi
+\tcall\tcoolstrlen
+\tmovl\t%eax, -4(%rbp)
+\tcmpq\t$0, -32(%rbp)
+\tjs\t.LCSS22
+\tcmpq\t$0, -40(%rbp)
+\tjs\t.LCSS22
+\tmovq\t-40(%rbp), %rax
+\tmovq\t-32(%rbp), %rdx
+\taddq\t%rax, %rdx
+\tmovl\t-4(%rbp), %eax
+\tcltq
+\tcmpq\t%rax, %rdx
+\tjle\t.LCSS23
+.LCSS22:
+\tmovl\t$0, %eax
+\tjmp \t.LCSS24
+.LCSS23:
+\tmovq\t-40(%rbp), %rdx
+\tmovq\t-32(%rbp), %rax
+\taddq\t-24(%rbp), %rax
+\tmovq\t%rdx, %rsi
+\tmovq\t%rax, %rdi
+\tcall\tstrndup
+.LCSS24:
+\tleave
+\t.cfi_def_cfa 7, 8
+\tret
+\t.cfi_endproc
+.LFE4:
+\t.size\tcoolsubstr, .-coolsubstr
+\t
+
+    """
+
+def _build_coolgetstr():
+    return """\
+\t.text
+\t.section\t.rodata
+.LCGSC1:
+\t.asciz ""
+\t.text
+\t.globl coolgetstr
+\t.type\tcoolgetstr, @function
+coolgetstr:
+.LFB3:
+\t.cfi_startproc
+\tpush\t%rbp
+\t.cfi_def_cfa_offset 16
+\t.cfi_offset 6, -16
+\tmovq\t%rsp, %rbp
+\t.cfi_def_cfa_register 6
+\tsubq\t$32, %rsp
+\tmovl\t$1, %esi
+\tmovl\t$40960, %edi
+\tcall\tcalloc
+\tmovq\t%rax, -16(%rbp)
+\tmovl\t$0, -4(%rbp)
+.LCGS20:
+\tmovq\tstdin(%rip), %rax
+\tmovq\t%rax, %rdi
+\tcall\tfgetc
+\tmovl\t%eax, -20(%rbp)
+\tcmpl\t$-1, -20(%rbp)
+\tje\t.LCGS14
+\tcmpl\t$10, -20(%rbp)
+\tjne\t.LCGS15
+.LCGS14:
+\tcmpl\t$0, -4(%rbp)
+\tje\t.LCGS16
+\tleal\t.LCGSC1(%rip), %eax
+\tjmp \t.LCGS17
+.LCGS16:
+\tmovq\t-16(%rbp), %rax
+\tjmp \t.LCGS17
+.LCGS15:
+\tcmpl\t$0, -20(%rbp)
+\tjne \t.LCGS18
+\tmovl\t$1, -4(%rbp)
+\tjmp \t.LCGS20
+.LCGS18:
+\tmovq\t-16(%rbp), %rax
+\tmovq\t%rax, %rdi
+\tcall\tcoolstrlen
+\tmov\t%eax, %eax
+\taddq\t-16(%rbp), %rax
+\tmovl\t-20(%rbp), %edx
+\tmovb\t%dl, (%rax)
+\tjmp\t.LCGS20
+.LCGS17:
+\tleave
+\t.cfi_def_cfa 7, 8
+\tret
+\t.cfi_endproc
+.LFE3:
+\t.size   coolgetstr, .-coolgetstr
+"""
+
 HELPERS = [
     _build_io_outint(),
     _build_io_outstring(),
@@ -491,5 +861,10 @@ HELPERS = [
     _build_eq_helper(),
     _build_lt_helper(),
     _build_le_helper(), 
-    _build_main()
+    _build_main(),
+    _build_cooloutstr(),
+    _build_coolstrlen(),
+    _build_coolstrcat(),
+    _build_coolsubstr(),
+    _build_coolgetstr()
 ]

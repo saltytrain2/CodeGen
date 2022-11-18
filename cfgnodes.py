@@ -71,13 +71,12 @@ class CFGBlock(object):
 
         Some special registers will always be allocated for certain needs, which are shown below
 
-        r11 -> self pointer
-        r12 -> register for calling functions if necessary
+        r12 -> self pointer
         r13 -> trash register for arithmetic operations
         r14 -> temporary register for immediates (we wont be using more than 1 per instruction)
         r15 -> more trash registers
         rcx -> immediate register
-        rax -> subroutine return register
+        rax -> subroutine return register and dynamic dispatch calling register
         rbp + offset -> stack temporaries
 
         All other registers are allocated in a greedy manner, in the unoptimized tac all temporaries are spilled
@@ -100,7 +99,7 @@ class CFGBlock(object):
         
         for treg in regs_to_alloc:
             physical_reg = reg_allocator.get_unused_reg(treg)
-            assert physical_reg is not None
+            #assert physical_reg is not None
 
             treg.set_preg(physical_reg)
 
@@ -113,7 +112,7 @@ class CFGBlock(object):
 
             # we want to find all live variables and mark variables that reside in caller-saved registers
             live_regs:List[PReg] = [
-                reg_allocator.get_physical_mapping(i) for i in inst.live if reg_allocator.get_physical_mapping(i) is not None
+                reg_allocator.get_physical_mapping(i) for i in inst.get_live_in() if reg_allocator.get_physical_mapping(i) is not None
             ]
             live_volatile_regs:List[PReg] = [i for i in live_regs if i in reg_allocator.get_caller_regs()]
             inst.save_regs = live_volatile_regs
@@ -123,7 +122,7 @@ class CFGBlock(object):
 class FixedRegisterAllocator(object):
     def __init__(self, interference_graph:Dict[TacReg, Set[TacReg]]=None):
         self.return_reg:PReg = PReg("%rax")
-        self.self_reg:PReg = PReg("%r11")
+        self.self_reg:PReg = PReg("%rdi")
         self.caller_saved:List[PReg] = [
             PReg("%rdi"), PReg("%rsi"), PReg("%rdx"), PReg("%rcx"), PReg("%r8"), PReg("%r9"), PReg("%r10"), PReg("%r11"), PReg("%rax")
         ]
@@ -220,6 +219,8 @@ class CFGFunc(object):
         self.interference:Dict[TacReg, Set[TacReg]] = defaultdict(set)
         self.reg_allocator:FixedRegisterAllocator = FixedRegisterAllocator({})
         self.process_func(func)
+        self.self_reg = func.self_reg
+        self.reg_allocator.add_used_reg(PReg("%rdi"), self.self_reg)
     
     def process_func(self, func:TacFunc) -> None:
         # allocate all CFB Blocks
@@ -241,8 +242,9 @@ class CFGFunc(object):
             branch_labels = cfg_block.get_branch_labels()
 
             for label in branch_labels:
-                cfg_block.add_succ(self.cfg_map[str(label.num)])
-                self.cfg_map[str(label.num)].add_pred(cfg_block)
+                if str(label.num) in self.cfg_map:
+                    cfg_block.add_succ(self.cfg_map[str(label.num)])
+                    self.cfg_map[str(label.num)].add_pred(cfg_block)
 
     def get_cfg_blocks(self) -> List[CFGBlock]:
         return self.cfg_blocks
@@ -254,8 +256,16 @@ class CFGFunc(object):
         return "".join(str_list)
     
     def calc_liveness(self) -> None:
-        for cfg_block in self.cfg_blocks:
-            cfg_block.calc_liveness()
+        # make sure self is set as a global variable: must always persist
+        self.cfg_blocks[-1].live_out.add(self.self_reg)
+        worklist = deque([cfg_block for cfg_block in reversed(self.cfg_blocks)])
+        while worklist:
+            cur_block = worklist.popleft()
+            if cur_block.calc_liveness():
+                for pred in cur_block.preds:
+                    worklist.append(pred)
+        # for cfg_block in reversed(self.cfg_blocks):
+        #     cfg_block.calc_liveness()
     
     def set_dominators(self) -> None:
         # set the dominator of the entry block
@@ -268,7 +278,9 @@ class CFGFunc(object):
             changed = False
             for cfg_block in self.cfg_blocks[1:]:
                 prev_dominators = cfg_block.dominators.copy()
-                cfg_block.dominators = {cfg_block}.union(set.intersection(*[pred.dominators for pred in cfg_block.preds]))
+                dominators = [pred.dominators for pred in cfg_block.preds]
+                if dominators:
+                    cfg_block.dominators = {cfg_block}.union(set.intersection(*dominators if dominators != [] else set()))
                 changed = True if prev_dominators != cfg_block.dominators else changed
 
     def alloc_regs(self) -> None:
@@ -277,7 +289,8 @@ class CFGFunc(object):
     def fixed_alloc(self) -> None:
         """  
         This is the register allocation scheme that is solely for PA5
-        We hardcode all register allocations, which is allowed since we spill every temp to memory
+        We spill all variables to memory, which gives us enough registers for register allocation w/o worrying
+        about not having enough registers to color the interference graph
         """
         # update the interference graph
         self.reg_allocator.update_interference(self.interference)
@@ -325,8 +338,8 @@ class CFGFunc(object):
 
     def calc_interference(self) -> None:
         # generate live sets for each node in CFG
-        work_list:Deque[CFGBlock] = deque()
-        work_list.append(self.cfg_blocks[-1])
+        work_list:Deque[CFGBlock] = deque([i for i in reversed(self.cfg_blocks)])
+        self.cfg_blocks[-1].live_out.add(self.self_reg)
         while work_list:
             cfg_block = work_list.popleft()
             changed = cfg_block.calc_liveness()

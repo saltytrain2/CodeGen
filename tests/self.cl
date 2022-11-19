@@ -5,7 +5,7 @@ class Main inherits IO {
 };
 
 class Z inherits IO {
-	p():SELF_TYPE { out_string("qwer\n") };
+	p():SELF_TYPE {{ out_string("qwer\n"); out_string("qwer\n");  }};
 	m():SELF_TYPE { self };
 };
 

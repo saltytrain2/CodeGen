@@ -28,6 +28,7 @@ class LabelAllocator(object):
 class StringAllocator(object):
     def __init__(self):
         self.string_map:Dict[str, str] = defaultdict(str)
+        self.error_string_map:Dict[str, str] = defaultdict(str)
         self.string_num = 0
 
     def add_string(self, string_name:str) -> str:
@@ -41,11 +42,11 @@ class StringAllocator(object):
 
     def gen_x86_strings(self, asm:List[str]):
         for string_name in self.string_map:
-            format_string = string_name
-            raw_string = format_string.replace("\\", "\\\\").replace("\\\\\"", "\\\\\\\"").replace("\\\\n", "\\n").replace("\\\\t", "\\t")
+            raw_string = string_name.replace("\\", "\\\\").replace("\\\\\"", "\\\\\\\"")
             asm.append(f"\t.text\n\t.globl {self.string_map[string_name]}\n")
             asm.append(f"{self.string_map[string_name]}:\n")
             asm.append(f"\t.asciz \"{raw_string}\"\n")
+
             # for b in bytes(raw_string, "ascii"):
             #     asm.append(f"\t.byte {b}\n")
             # asm.append("\t.byte 0\n")
@@ -118,36 +119,32 @@ class CodeGen(object):
             asm.append(f"{self.label_allocator.emit_label(inst)}:\n")
         # TODO I currently assume that rax and r11 are trash registers and will never be allocated to variables
         elif isinstance(inst, TacDeclare):
-            asm.append(f"\tmovq\t0, {inst.dest.get_preg_str()}\n")
+            asm.append(f"\tmovq\t$0, {inst.dest.get_preg_str()}\n")
         elif isinstance(inst, TacAdd):
-            asm.append(f"\tmovq\t{inst.src2.get_preg_str()}, %r15\n")
-            asm.append(f"\taddq\t{inst.src1.get_preg_str()}, {inst.src2.get_preg_str()}\n")
-            asm.append(f"\tmovq\t{inst.src2.get_preg_str()}, {inst.dest.get_preg_str()}\n")
-            asm.append(f"\tmovq\t%r15, {inst.src2.get_preg_str()}\n")
+            asm.append(f"\tmovq\t{inst.src2.get_preg_str()}, %rax\n")
+            asm.append(f"\taddq\t{inst.src1.get_preg_str()}, %rax\n")
+            asm.append(f"\tmovq\t%rax, {inst.dest.get_preg_str()}\n")
         elif isinstance(inst, TacSub):
-            asm.append(f"\tmovq\t{inst.src2.get_preg_str()}, %r15\n")
-            asm.append(f"\tsubq\t{inst.src1.get_preg_str()}, {inst.src2.get_preg_str()}\n")
-            asm.append(f"\tmovq\t{inst.src2.get_preg_str()}, {inst.dest.get_preg_str()}\n")
-            asm.append(f"\tmovq\t%r15, {inst.src2.get_preg_str()}\n")
+            asm.append(f"\tmovq\t{inst.src1.get_preg_str()}, %rax\n")
+            asm.append(f"\tsubq\t{inst.src2.get_preg_str()}, %rax\n")
+            asm.append(f"\tmovq\t%rax, {inst.dest.get_preg_str()}\n")
         elif isinstance(inst, TacMul):
-            asm.append(f"\tmovq\t{inst.src2.get_preg_str()}, %r15\n")
-            asm.append(f"\timull\t{inst.src1.get_preg_32_str()}, {inst.src2.get_preg_32_str()}\n")
-            asm.append(f"\tshlq\t$32, {inst.src2.get_preg_str()}\n")
-            asm.append(f"\tshrq\t$32, {inst.src2.get_preg_str()}\n")
-            asm.append(f"\tmovq\t{inst.src2.get_preg_str()}, {inst.dest.get_preg_str()}\n")
-            asm.append(f"\tmovq\t%r15, {inst.src2.get_preg_str()}\n")
+            asm.append(f"\tmovq\t{inst.src2.get_preg_str()}, %rax\n")
+            asm.append(f"\timull\t{inst.src1.get_preg_32_str()}, %eax\n")
+            asm.append(f"\tshlq\t$32, %rax\n")
+            asm.append(f"\tshrq\t$32, %rax\n")
+            asm.append(f"\tmovq\t%rax, {inst.dest.get_preg_str()}\n")
         elif isinstance(inst, TacDiv):
-            asm.append("\tmovq\t%rdx, %r14\n")
-            asm.append("\tmovq\t%rax, %r15\n")
+            asm.append("\tmovq\t%rdx, %r15\n")
             asm.append(f"\tmovl\t{inst.src1.get_preg_32_str()}, %eax\n")
+            asm.append("\txor\t%edx, %edx\n")
             asm.append("\tcdq\n")
             if inst.src2.get_preg() == PReg("%rdx"):
-                asm.append("\tidivl\t%r14d\n")
+                asm.append("\tidivl\t%r15d\n")
             else:
                 asm.append(f"\tidivl\t{inst.src2.get_preg_32_str()}\n")
             asm.append(f"\tmovq\t%rax, {inst.dest.get_preg_str()}\n")
-            asm.append("\tmovq\t%r14, %rdx\n")
-            asm.append("\tmovq\t%r15, %rax\n")
+            asm.append("\tmovq\t%r15, %rdx\n")
         elif isinstance(inst, TacLoad):
             mem_reg = inst.src.get_preg_str() if inst.offset is None else f"{inst.offset*8}({inst.src.get_preg_str()})"
             asm.append(f"\tmovq\t{mem_reg}, {inst.dest.get_preg_str()}\n")
@@ -191,8 +188,7 @@ class CodeGen(object):
             
             # 16 byte align the pushes
             if (self.stack_alignment + len(stack)) & 1:
-                asm.append("\tpushq\t%r15\n")
-                stack.append("%r15")
+                asm.append("\tsubq\t$8, %rsp\n")
 
             # get the vtable
             # there should only be a . in the function name if this is a static dispatch
@@ -215,6 +211,8 @@ class CodeGen(object):
                 asm.append(f"\tcall\t*%rax\n")
 
             # pop off everything in the stack
+            if (self.stack_alignment + len(stack)) & 1:
+                asm.append("\taddq\t$8, %rsp\n")
             while stack:
                 asm.append(f"\tpopq\t{stack.pop()}\n")
             
@@ -239,7 +237,9 @@ class CodeGen(object):
             asm.append(f"\tmovq\t{inst.self_obj.get_preg_str()}, {inst.dest.get_preg_str()}\n")
         elif isinstance(inst, TacNot):
             asm.append(f"\tmovq\t{inst.src.get_preg_str()}, {inst.dest.get_preg_str()}\n")
-            asm.append(f"\txor\t{inst.dest.get_preg_str()}, 1\n")
+            asm.append(f"\txor\t$1, {inst.dest.get_preg_str()}\n")
         elif isinstance(inst, TacNegate):
             asm.append(f"\tmovq\t{inst.src.get_preg_str()}, {inst.dest.get_preg_str()}\n")
-            asm.append(f"\tneg\t{inst.dest.get_preg_str()}\n")   
+            asm.append(f"\tneg\t{inst.dest.get_preg_str()}\n")  
+        elif isinstance(inst, TacUnreachable):
+            asm.append(f"\tnop\n") 

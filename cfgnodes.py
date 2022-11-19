@@ -82,7 +82,7 @@ class CFGBlock(object):
         All other registers are allocated in a greedy manner, in the unoptimized tac all temporaries are spilled
         so there will be enough space in caller-saved registers for every operation
         """
-        offset = 0
+        offset = -8
         regs_to_alloc:List[TacReg] = []
         # before we just start allocating registers, we fix all returns that are supposed to be fixed
         for inst in self.inst_list:
@@ -103,7 +103,7 @@ class CFGBlock(object):
 
             treg.set_preg(physical_reg)
 
-        return abs(offset)
+        return abs(offset + 8)
 
     def resolve_stack_discipline(self, reg_allocator:FixedRegisterAllocator):
         for inst in self.inst_list:
@@ -217,7 +217,7 @@ class CFGFunc(object):
         self.cfg_map:Dict[str, CFGBlock] = defaultdict(CFGBlock, name="")
         self.cfg_blocks:List[CFGBlock] = []
         self.interference:Dict[TacReg, Set[TacReg]] = defaultdict(set)
-        self.reg_allocator:FixedRegisterAllocator = FixedRegisterAllocator({})
+        self.reg_allocator:FixedRegisterAllocator = FixedRegisterAllocator()
         self.process_func(func)
         self.self_reg = func.self_reg
         self.reg_allocator.add_used_reg(PReg("%rdi"), self.self_reg)

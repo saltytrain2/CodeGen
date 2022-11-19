@@ -2,6 +2,22 @@ from __future__ import annotations
 from typing import List, Tuple
 from tacnodes import *
 
+class DeclarationList(object):
+    def __init__(self):
+        self.obj_list:List[Tuple[Any, TacReg]] = []
+    
+    def add_node(self, ast_node:Any, tacreg:TacReg) -> None:
+        self.obj_list.append((ast_node, tacreg))
+
+    def get_tacreg(self, ast_node:Any) -> TacReg:
+        for item, tacreg in self.obj_list:
+            if ast_node is item:
+                return tacreg
+
+        raise TypeError("You looked for something nonexistent in the declaration list")
+
+    def clear(self) -> None:
+        self.obj_list.clear()
 
 class Tac(object):
     class_map:Dict[str, List[ClassAttribute]] = defaultdict(list)
@@ -30,7 +46,8 @@ class Tac(object):
         for entry in parent_map:
             self.parent_map[entry.child] = entry.parent
 
-        self.declaration_map:Dict[Expression, TacReg] = defaultdict(TacReg, num=-1)
+        #self.declaration_map:Dict[Expression, TacReg] = defaultdict(TacReg, num=-1)
+        self.declaration_list = DeclarationList()
         self.processed_funcs:List[TacFunc] = []
         self.cur_tacfunc = None
         self.num = 0
@@ -49,6 +66,7 @@ class Tac(object):
                 self.attr_table[attr.get_name()] = offset
                 offset += 1
 
+            self.declaration_list.clear()
             self.tacgen_constructor(c)
             for method in self.impl_map[c]:
                 if method.parent != c:
@@ -98,19 +116,19 @@ class Tac(object):
         self.cur_tacfunc.append(TacStore(vtable_reg, self_reg, 2))
 
         for attr in self.class_map[c]:
-            if attr.attr_type in {"Bool", "Int", "String"}:
-                temp_reg = self.create_reg()
-                self.cur_tacfunc.append(TacCreate(attr.attr_type, temp_reg))
-                self.cur_tacfunc.append(TacStore(temp_reg, self_reg, self.attr_table[attr.get_name()]))
             if attr.attr_expr is not None:
                 attr_ret = self.tacgen_exp(attr.attr_expr)
                 self.cur_tacfunc.append(TacStore(attr_ret, self_reg, self.attr_table[attr.get_name()]))
+            elif attr.attr_type in {"Bool", "Int", "String"}:
+                temp_reg = self.create_reg()
+                self.cur_tacfunc.append(TacCreate(attr.attr_type, temp_reg))
+                self.cur_tacfunc.append(TacStore(temp_reg, self_reg, self.attr_table[attr.get_name()]))
         
         self.cur_tacfunc.append(TacRet(self_reg))
 
         self.processed_funcs.append(self.cur_tacfunc)
         self.num = temp_num
-        self.declaration_map.clear()
+        self.declaration_list.clear()
 
     def tacgen_func(self, method:ImplMethod) -> None:
         temp_num = self.num
@@ -147,16 +165,16 @@ class Tac(object):
             self.symbol_table[param_name].pop()
 
         self.num = temp_num
-        self.declaration_map.clear()
+        self.declaration_list.clear()
 
     def create_let_stack_vars(self, binding:LetBinding):
-        self.declaration_map[binding] = self.create_reg(True)
-        self.cur_tacfunc.append(TacAlloc(binding.var_type.name, self.declaration_map[binding]))
+        self.declaration_list.add_node(binding, self.create_reg(True))
+        self.cur_tacfunc.append(TacAlloc(binding.var_type.name, self.declaration_list.get_tacreg(binding)))
         self.create_stack_vars(binding.val)
 
     def create_case_stack_vars(self, case_elem:CaseElement):
-        self.declaration_map[case_elem] = self.create_reg(True)
-        self.cur_tacfunc.append(TacAlloc(case_elem.get_type(), self.declaration_map[case_elem]))
+        self.declaration_list.add_node(case_elem, self.create_reg(True))
+        self.cur_tacfunc.append(TacAlloc(case_elem.get_type(), self.declaration_list.get_tacreg(case_elem)))
         self.create_stack_vars(case_elem.expr)
         pass
 
@@ -203,8 +221,8 @@ class Tac(object):
             self.create_stack_vars(exp.rhs)
         
         if isinstance(exp, (Case, If)):
-            self.declaration_map[exp] = self.create_reg(True)
-            self.cur_tacfunc.append(TacAlloc(exp.exp_type, self.declaration_map[exp]))
+            self.declaration_list.add_node(exp, self.create_reg(True))
+            self.cur_tacfunc.append(TacAlloc(exp.exp_type, self.declaration_list.get_tacreg(exp)))
 
     def tacgen_exp(self, exp:Expression) -> TacReg:
         if isinstance(exp, Binop):
@@ -235,7 +253,7 @@ class Tac(object):
                     self.cur_tacfunc.append(true_label)
                     error_str = self.create_reg()
                     self.cur_tacfunc.append(TacLoadImm(TacStr(f"ERROR: {exp.lineno}: Exception: division by zero\\n"), error_str))
-                    self.cur_tacfunc.append(TacSyscall("printf@PLT", [error_str], self.create_reg()))
+                    self.cur_tacfunc.append(TacSyscall("cooloutstr", [error_str], self.create_reg()))
                     one_reg = self.create_reg()
                     self.cur_tacfunc.append(TacLoadImm(TacImm(0), one_reg))
                     self.cur_tacfunc.append(TacSyscall("exit@PLT", [one_reg], self.create_reg()))
@@ -281,21 +299,22 @@ class Tac(object):
             return bool_reg
         elif isinstance(exp, Dispatch):
             obj_reg = self.tacgen_exp(exp.obj) if exp.obj is not None else self.self_reg()
-            void_branch = self.create_label()
-            nonvoid_branch = self.create_label()
-            void_reg = self.create_reg()
-            self.cur_tacfunc.append(TacLoadImm(TacImm(0), void_reg))
-            self.cur_tacfunc.append(TacCmp(void_reg, obj_reg))
-            self.cur_tacfunc.append(TacBr(TacCmpOp.EQ, void_branch, nonvoid_branch))
-            self.cur_tacfunc.append(void_branch)
-            error_str = self.create_reg()
-            self.cur_tacfunc.append(TacLoadImm(TacStr(f"ERROR: {exp.lineno}: Exception: dispatch on void\\n"), error_str))
-            self.cur_tacfunc.append(TacSyscall("printf@PLT", [error_str], self.create_reg()))
-            zero_reg = self.create_reg()
-            self.cur_tacfunc.append(TacLoadImm(TacImm(0), zero_reg))
-            self.cur_tacfunc.append(TacSyscall("exit", [zero_reg], self.create_reg()))
-            self.cur_tacfunc.append(TacUnreachable())
-            self.cur_tacfunc.append(nonvoid_branch)
+            if not isinstance(exp, SelfDispatch):
+                void_branch = self.create_label()
+                nonvoid_branch = self.create_label()
+                void_reg = self.create_reg()
+                self.cur_tacfunc.append(TacLoadImm(TacImm(0), void_reg))
+                self.cur_tacfunc.append(TacCmp(void_reg, obj_reg))
+                self.cur_tacfunc.append(TacBr(TacCmpOp.EQ, void_branch, nonvoid_branch))
+                self.cur_tacfunc.append(void_branch)
+                error_str = self.create_reg()
+                self.cur_tacfunc.append(TacLoadImm(TacStr(f"ERROR: {exp.lineno}: Exception: dispatch on void\\n"), error_str))
+                self.cur_tacfunc.append(TacSyscall("cooloutstr", [error_str], self.create_reg()))
+                zero_reg = self.create_reg()
+                self.cur_tacfunc.append(TacLoadImm(TacImm(0), zero_reg))
+                self.cur_tacfunc.append(TacSyscall("exit", [zero_reg], self.create_reg()))
+                self.cur_tacfunc.append(TacUnreachable())
+                self.cur_tacfunc.append(nonvoid_branch)
 
             param_regs = [obj_reg]
             for arg in exp.args:
@@ -324,37 +343,40 @@ class Tac(object):
             dest_reg = self.add_tac_create(exp.class_name.get_name())
             return dest_reg
         elif isinstance(exp, UnaryOp):
-            # TODO these unary operations are clearly wrong
             rhs_reg = self.tacgen_exp(exp.rhs)
             dest_reg = self.create_reg()
             if isinstance(exp, Negate):
+                int_prim = self.create_reg()
                 negative_reg = self.create_reg()
                 self.cur_tacfunc.append(TacCreate("Int", dest_reg))
-                self.cur_tacfunc.append(TacNegate(rhs_reg, negative_reg))
+                self.cur_tacfunc.append(TacLoad(rhs_reg, int_prim, 3))
+                self.cur_tacfunc.append(TacNegate(int_prim, negative_reg))
                 self.cur_tacfunc.append(TacStore(negative_reg, dest_reg, 3))
             elif isinstance(exp, Not):
+                bool_prim = self.create_reg()
                 logical_negate_reg = self.create_reg()
                 self.cur_tacfunc.append(TacCreate("Bool", dest_reg))
-                self.cur_tacfunc.append(TacNot(rhs_reg, logical_negate_reg))
+                self.cur_tacfunc.append(TacLoad(rhs_reg, bool_prim, 3))
+                self.cur_tacfunc.append(TacNot(bool_prim, logical_negate_reg))
                 self.cur_tacfunc.append(TacStore(logical_negate_reg, dest_reg, 3))
             else:
                 # isvoid
                 self.cur_tacfunc.append(TacCreate("Bool", dest_reg))
                 zero_reg = self.create_reg()
-                self.cur_tacfunc.append(TacLoadImm(TacImm(0)), zero_reg)
-                self.cur_tacfunc.append(TacCmp(TacCmpOp.EQ, rhs_reg, zero_reg))
+                self.cur_tacfunc.append(TacLoadImm(TacImm(0), zero_reg))
+                self.cur_tacfunc.append(TacCmp(rhs_reg, zero_reg))
                 true_label = self.create_label()
                 false_label = self.create_label()
                 end_label = self.create_label()
                 self.cur_tacfunc.append(TacBr(TacCmpOp.EQ, true_label, false_label))
                 self.cur_tacfunc.append(true_label)
                 true_reg = self.create_reg()
-                self.cur_tacfunc.append(TacLoadImm(1), true_reg)
+                self.cur_tacfunc.append(TacLoadImm(TacImm(1), true_reg))
                 self.cur_tacfunc.append(TacStore(true_reg, dest_reg, 3))
-                self.cur_tacfunc.append(TacBr(true_label = end_label))
+                self.cur_tacfunc.append(TacBr(true_label=end_label))
                 self.cur_tacfunc.append(false_label)
                 false_reg = self.create_reg()
-                self.cur_tacfunc.append(TacLoadImm(0), false_reg)
+                self.cur_tacfunc.append(TacLoadImm(TacImm(0), false_reg))
                 self.cur_tacfunc.append(TacStore(false_reg, dest_reg, 3))
                 self.cur_tacfunc.append(TacBr(true_label=end_label))
                 self.cur_tacfunc.append(end_label)
@@ -374,17 +396,17 @@ class Tac(object):
 
             self.cur_tacfunc.append(true_label)
             then_reg = self.tacgen_exp(exp.then_body)
-            self.cur_tacfunc.append(TacStore(then_reg, self.declaration_map[exp]))
+            self.cur_tacfunc.append(TacStore(then_reg, self.declaration_list.get_tacreg(exp)))
             self.cur_tacfunc.append(TacBr(true_label=end_label))
 
             self.cur_tacfunc.append(false_label)
             else_reg = self.tacgen_exp(exp.else_body)
-            self.cur_tacfunc.append(TacStore(else_reg, self.declaration_map[exp]))
+            self.cur_tacfunc.append(TacStore(else_reg, self.declaration_list.get_tacreg(exp)))
             self.cur_tacfunc.append(TacBr(true_label=end_label))
             self.cur_tacfunc.append(end_label)
 
             ret_reg = self.create_reg()
-            self.cur_tacfunc.append(TacLoad(self.declaration_map[exp], ret_reg))
+            self.cur_tacfunc.append(TacLoad(self.declaration_list.get_tacreg(exp), ret_reg))
             return ret_reg
         elif isinstance(exp, While):
             while_start = self.create_label()
@@ -426,24 +448,24 @@ class Tac(object):
         elif isinstance(exp, Let):
             # adding additional registers into the symbol table
             for let_binding in exp.binding_list:
-                binding_name = let_binding.var.name
-                self.symbol_table[binding_name].append(self.declaration_map[let_binding])
+                binding_name = let_binding.get_var_name()
+                self.symbol_table[binding_name].append(self.declaration_list.get_tacreg(let_binding))
                 if let_binding.has_init():
                     init_res = self.tacgen_exp(let_binding.val)
-                    self.cur_tacfunc.append(TacStore(init_res, self.declaration_map[let_binding]))
+                    self.cur_tacfunc.append(TacStore(init_res, self.declaration_list.get_tacreg(let_binding)))
                 elif let_binding.var_type.get_name() in {"Bool", "Int", "String"}:
                     create_reg = self.create_reg()
                     self.cur_tacfunc.append(TacCreate(let_binding.var_type.get_name(), create_reg))
-                    self.cur_tacfunc.append(TacStore(create_reg, self.declaration_map[let_binding]))
+                    self.cur_tacfunc.append(TacStore(create_reg, self.declaration_list.get_tacreg(let_binding)))
                 else:
                     void_reg = self.create_reg()
-                    self.cur_tacfunc.append(TacLoadImm(0), void_reg)
-                    self.cur_tacfunc.append(TacStore(void_reg, self.declaration_map[let_binding]))
+                    self.cur_tacfunc.append(TacLoadImm(TacImm(0), void_reg))
+                    self.cur_tacfunc.append(TacStore(void_reg, self.declaration_list.get_tacreg(let_binding)))
             
             ret_reg = self.tacgen_exp(exp.expr)
 
             for let_binding in exp.binding_list:
-                self.symbol_table[let_binding.var.name].pop()
+                self.symbol_table[let_binding.get_var_name()].pop()
             
             return ret_reg
 
@@ -461,7 +483,7 @@ class Tac(object):
             self.cur_tacfunc.append(void_branch)
             error_str = self.create_reg()
             self.cur_tacfunc.append(TacLoadImm(TacStr(f"ERROR: {exp.lineno}: Exception: case on void\\n"), error_str))
-            self.cur_tacfunc.append(TacSyscall("printf@PLT", [error_str], self.create_reg()))
+            self.cur_tacfunc.append(TacSyscall("cooloutstr", [error_str], self.create_reg()))
             zero_reg = self.create_reg()
             self.cur_tacfunc.append(TacLoadImm(TacImm(0), zero_reg))
             self.cur_tacfunc.append(TacSyscall("exit", [zero_reg], self.create_reg()))
@@ -484,7 +506,7 @@ class Tac(object):
             # if we fell through, we now need to generate an error condition
             error_str = self.create_reg()
             self.cur_tacfunc.append(TacLoadImm(TacStr(f"ERROR: {exp.lineno}: Exception: case without matching branch\\n"), error_str))
-            self.cur_tacfunc.append(TacSyscall("printf@PLT", [error_str], self.create_reg()))
+            self.cur_tacfunc.append(TacSyscall("cooloutstr", [error_str], self.create_reg()))
             zero_reg = self.create_reg()
             self.cur_tacfunc.append(TacLoadImm(TacImm(0), zero_reg))
             self.cur_tacfunc.append(TacSyscall("exit@PLT", [zero_reg], self.create_reg()))
@@ -493,15 +515,16 @@ class Tac(object):
             # now generate the case expression labels
             for i, case_elem in enumerate(exp.case_list):
                 self.cur_tacfunc.append(case_labels[i])
-                self.symbol_table[case_elem.get_name()].append(self.declaration_map[case_elem])
+                self.symbol_table[case_elem.get_name()].append(self.declaration_list.get_tacreg(case_elem))
+                self.cur_tacfunc.append(TacStore(cur_obj, self.declaration_list.get_tacreg(case_elem)))
                 elem_reg = self.tacgen_exp(case_elem.expr)
                 self.symbol_table[case_elem.get_name()].pop()
-                self.cur_tacfunc.append(TacStore(elem_reg, self.declaration_map[exp]))
+                self.cur_tacfunc.append(TacStore(elem_reg, self.declaration_list.get_tacreg(exp)))
                 self.cur_tacfunc.append(TacBr(true_label=case_end))
 
             self.cur_tacfunc.append(case_end)
             ret_reg = self.create_reg()
-            self.cur_tacfunc.append(TacLoad(self.declaration_map[exp], ret_reg))
+            self.cur_tacfunc.append(TacLoad(self.declaration_list.get_tacreg(exp), ret_reg))
             return ret_reg
 
     def debug_tac(self) -> None:

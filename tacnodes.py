@@ -178,6 +178,13 @@ class TacImmLabel(TacImm):
     def __repr__(self) -> str:
         return self.val
 
+class TacErrorStr(TacImm):
+    def __init__(self, val:str):
+        super().__init__(val)
+
+    def __repr__(self) -> str:
+        return self.val
+
 
 class TacInst(object):
     def __init__(self, op:TacOp, livegen:Set[TacValue]=None, livekill:Set[TacValue]=None):

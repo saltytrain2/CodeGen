@@ -13,15 +13,14 @@ IO.out_int:
 \tpushq\t%rbp
 \tmovq\t%rsp, %rbp
 \tmovq\t24(%rsi), %rsi
-\tmovq\t$8, %rcx
 \tpushq\t%rdi
-\tsubq\t%rcx, %rsp
+\tsubq\t$8, %rsp
 \tleaq\t.LIOINT(%rip), %rdi
 \txor\t%eax, %eax
 \tcall\tprintf@PLT
-\tmovq\t$8, %rcx
-\taddq\t%rcx, %rsp
+\taddq\t$8, %rsp
 \tpopq\t%rax
+\tmovq\t%rbp, %rsp
 \tpopq\t%rbp
 \tret
 """
@@ -33,14 +32,13 @@ def _build_io_outstring():
 IO.out_string:
 \tpushq\t%rbp
 \tmovq\t%rsp, %rbp
-\tmovq\t$8, %rcx
 \tpushq\t%rdi
 \tmovq\t24(%rsi), %rdi
-\tsubq\t%rcx, %rsp
+\tsubq\t$8, %rsp
 \tcall\tcooloutstr
-\tmovq\t$8, %rcx
-\taddq\t%rcx, %rsp
+\taddq\t$8, %rsp
 \tpopq\t%rax
+\tmovq\t%rbp, %rsp
 \tpopq\t%rbp
 \tret
 
@@ -58,12 +56,10 @@ def _build_io_inint():
 IO.in_int:
 \tpushq\t%rbp
 \tmovq\t%rsp, %rbp
-\tmovq\t$8, %rcx
 \tpushq\t%rdi
-\tsubq\t%rcx, %rsp
+\tsubq\t$8, %rsp
 \tcall\tInt..new
-\tmovq\t$8, %rcx
-\taddq\t%rcx, %rsp
+\taddq\t$8, %rsp
 \tpushq\t%rax
 \tmovq\t$1, %rsi
 \tmovq\t$4096, %rdi
@@ -73,18 +69,24 @@ IO.in_int:
 \tmovq\tstdin(%rip), %rdx
 \tcall\tfgets
 \tmovq\t%rax, %rdi
+\tcmpq\t$0, %rdi
+\tje\t.LIEND
 \tleaq\t.LCIOININT(%rip), %rsi
-\tpopq\t%r8
-\tleaq\t24(%r8), %rdx
-\tpushq\t%r8
+\tsubq\t$16, %rsp
+\tmovq\t%rsp, %rdx
+\txor\t%eax, %eax
 \tcall\tsscanf
-\tmovq\t$0, %rsi
-\tcmpq\t$2147483647, %rdx
-\tcmovg\t%rsi, %rdx
-\tcmpq\t$-2147483648, %rdx
-\tcmovl\t%rsi, %rdx
-\tpopq\t%rax
 \tpopq\t%rdi
+\taddq\t$8, %rsp
+\tmovq\t$0, %rsi
+\tcmpq\t$2147483647, %rdi
+\tcmovg\t%rsi, %rdi
+\tcmpq\t$-2147483648, %rdi
+\tcmovl\t%rsi, %rdi
+.LIEND:
+\tpopq\t%rax
+\tpopq\t%rdx
+\tmovq\t%rdi, 24(%rax)
 \tmovq\t%rbp, %rsp
 \tpopq\t%rbp
 \tret
@@ -98,17 +100,15 @@ def _build_io_instring():
 \t.globl IO.in_string
 IO.in_string:
 \tpushq\t%rbp
-\tmovq\t%rbp, %rsp
+\tmovq\t%rsp, %rbp
 \tcall\tcoolgetstr
-\tmovq\t$8, %rcx
 \tpushq\t%rax
-\tsubq\t%rcx, %rsp
+\tsubq\t$8, %rsp
 \tcall\tString..new
-\tmovq\t$8, %rcx
-\tsubq\t%rcx, %rsp
+\taddq\t$8, %rsp
 \tpopq\t%rdi
 \tmovq\t%rdi, 24(%rax)
-\tmovq\t%rsp, %rbp
+\tmovq\t%rbp, %rsp
 \tpopq\t%rbp
 \tret
     
@@ -124,12 +124,14 @@ def _build_object_abort():
 \t.globl Object.abort
 Object.abort:
 \tpushq\t%rbp
+\tmovq\t%rsp, %rbp
 \tleaq\t.LCObort(%rip), %rdi
 \txor\t%eax, %eax
 \tcall\tprintf@PLT
 \txor\t%edi, %edi
 \tcall\texit@PLT
 \tnop
+\tmovq\t%rbp, %rsp
 \tpopq\t%rbp
 \tret
 
@@ -141,16 +143,16 @@ def _build_object_typename():
 \t.globl Object.type_name
 Object.type_name:
 \tpushq\t%rbp
+\tmovq\t%rsp, %rbp
 \tpushq\t%rdi
-\tmovq\t$8, %rcx
-\tsubq\t%rcx, %rsp
+\tsubq\t$8, %rsp
 \tcall\tString..new
-\tmovq\t$8, %rcx
-\taddq\t%rcx, %rsp
+\taddq\t$8, %rsp
 \tpopq\t%rdi
 \tmovq\t16(%rdi), %r8
 \tmovq\t0(%r8), %r8
 \tmovq\t%r8, 24(%rax)
+\tmovq\t%rbp, %rsp
 \tpopq\t%rbp
 \tret
 
@@ -183,6 +185,7 @@ Object.copy:
 \tjz\t.Lcopyend
 \tjmp\t.Lcopy1
 .Lcopyend:
+\tmovq\t%rbp, %rsp
 \tpopq\t%rbp
 \tret
 
@@ -196,15 +199,16 @@ def _build_string_concat():
 String.concat:
 \tpushq\t%rbp
 \tmovq\t%rsp, %rbp
-\tpushq\t%rdi
-\tpushq\t%rsi
-\tmovq\t$4096, %rdi
-\tmovq\t$1, %rsi
-\tcall\tcalloc
-\tpopq\t%rsi
-\tpopq\t%rdi
-
+\tmovq\t24(%rdi), %rdi
+\tmovq\t24(%rsi), %rsi
+\tcall\tcoolstrcat
+\tpushq\t%rax
+\tsubq\t$8, %rsp
 \tcall\tString..new
+\taddq\t$8, %rsp
+\tpopq\t%rdi
+\tmovq\t%rdi, 24(%rax)
+\tmovq\t%rbp, %rsp
 \tpopq\t%rbp
 \tret
 
@@ -218,18 +222,16 @@ def _build_string_length():
 String.length:
 \tpushq\t%rbp
 \tmovq\t%rsp, %rbp
-\tpushq\t%r15
 \tmovq\t24(%rdi), %rdi
 \txor\t%eax, %eax
 \tcall\tcoolstrlen
-\tmovq\t$8, %rcx
 \tpushq\t%rax
-\tsubq\t%rcx, %rsp
+\tsubq\t$8, %rsp
 \tcall\tInt..new
-\tmovq\t$8, %rcx
-\taddq\t%rcx, %rsp
+\taddq\t$8, %rsp
 \tpopq\t%rdi
 \tmovq\t%rdi, 24(%rax)
+\tmovq\t%rbp, %rsp
 \tpopq\t%rbp
 \tret
 
@@ -239,9 +241,34 @@ String.length:
 def _build_string_substr():
     return """\
 \t.text
+\t.section\t.rodata
+.LCSE:
+\t.asciz "ERROR: 0: Exception: String.substr out of range\\n"
+\t.text
 \t.globl String.substr
 String.substr:
-\txor %eax, %eax
+\tpushq\t%rbp
+\tmovq\t%rsp, %rbp
+\tmovq\t24(%rdi), %rdi
+\tmovq\t24(%rsi), %rsi
+\tmovq\t24(%rdx), %rdx
+\tcall\tcoolsubstr
+\tcmpq\t$0, %rax
+\tjne\t.LSG
+\tleaq\t.LCSE(%rip), %rdi
+\tcall\tprintf@PLT
+\txor\t%edi, %edi
+\tcall\texit@PLT
+\tnop
+.LSG:
+\tpushq\t%rax
+\tsubq\t$8, %rsp
+\tcall\tString..new
+\taddq\t$8, %rsp
+\tpopq\t%rdi
+\tmovq\t%rdi, 24(%rax)
+\tmovq\t%rbp, %rsp
+\tpopq\t%rbp
 \tret
 
     """
@@ -261,6 +288,7 @@ IO..new:
 \tmovq\t%rdi, 8(%rax)
 \tleaq\tIO..vtable(%rip), %rdi
 \tmovq\t%rdi, 16(%rax)
+\tmovq\t%rbp, %rsp
 \tpopq\t%rbp
 \tret
     """
@@ -279,6 +307,7 @@ Object..new:
 \tmovq\t%rdi, 8(%rax)
 \tleaq\tObject..vtable(%rip), %rdi
 \tmovq\t%rdi, 16(%rax)
+\tmovq\t%rbp, %rsp
 \tpopq\t%rbp
 \tret
 
@@ -301,6 +330,7 @@ Int..new:
 \tmovq\t%rdi, 16(%rax)
 \txor\t%edi, %edi
 \tmovq\t%rdi, 24(%rax)
+\tmovq\t%rbp, %rsp
 \tpopq\t%rbp
 \tret
 
@@ -325,8 +355,9 @@ String..new:
 \tmovq\t%rdi, 8(%rax)
 \tleaq\tString..vtable(%rip), %rdi
 \tmovq\t%rdi, 16(%rax)
-\tmovq\t.LStringNew(%rip), %rdi
+\tleaq\t.LStringNew(%rip), %rdi
 \tmovq\t%rdi, 24(%rax)
+\tmovq\t%rbp, %rsp
 \tpopq\t%rbp
 \tret
 
@@ -349,6 +380,7 @@ Bool..new:
 \tmovq\t%rdi, 16(%rax)
 \txor\t%edi, %edi
 \tmovq\t%rdi, 24(%rax)
+\tmovq\t%rbp, %rsp
 \tpopq\t%rbp
 \tret
 
@@ -359,8 +391,8 @@ def _build_main():
 \t.text
 \t.globl main
 main:
-\tpushq %rbp
-\tmovq %rsp, %rbp
+\tpushq\t%rbp
+\tmovq\t%rsp, %rbp
 \tcall\tMain..new
 \tmovq\t%rax, %rdi
 \tcall\tMain.main
@@ -377,6 +409,7 @@ def _build_eq_helper() -> str:
 \t.globl eq_helper
 eq_helper:
 \tpushq\t%rbp
+\tmovq\t%rsp, %rbp
 \tcmpq\t%rdi, %rsi
 \tje\teq_true
 \txor\t%rcx, %rcx
@@ -420,6 +453,7 @@ eq_string:
 \tje\teq_true
 \tjmp\teq_false
 eq_end:
+\tmovq\t%rbp, %rsp
 \tpopq\t%rbp
 \tret
 
@@ -431,6 +465,7 @@ def _build_lt_helper() -> str:
 \t.globl lt_helper
 lt_helper:
 \tpushq\t%rbp
+\tmovq\t%rsp, %rbp
 \txor\t%rcx, %rcx
 \tcmpq\t%rsi, %rcx
 \tje\tlt_false
@@ -454,12 +489,12 @@ lt_true:
 \tcall\tBool..new
 \tmovq\t$1, %rcx
 \tmovq\t%rcx, 24(%rax)
-\tjmp\teq_end
+\tjmp\tlt_end
 lt_bool:
 lt_int:
 \tmovq\t24(%rdi), %rdi
 \tmovq\t24(%rsi), %rsi
-\tcmpl\t%edi, %esi
+\tcmpl\t%esi, %edi
 \tjl\tlt_true
 \tjmp\tlt_false
 lt_string:
@@ -470,6 +505,7 @@ lt_string:
 \tjl\tlt_true
 \tjmp\tlt_false
 lt_end:
+\tmovq\t%rbp, %rsp
 \tpopq\t%rbp
 \tret
 
@@ -481,6 +517,7 @@ def _build_le_helper() -> str:
 \t.globl le_helper
 le_helper:
 \tpushq\t%rbp
+\tmovq\t%rsp, %rbp
 \tcmpq\t%rdi, %rsi
 \tje\tle_true
 \txor\t%rcx, %rcx
@@ -500,7 +537,7 @@ le_helper:
 \tcmpq\t%r9, %rcx
 \tje\tle_string
 \tcmp\t%rsi, %rdi
-\tje\teq_true
+\tje\tle_true
 le_false:
 \tcall\tBool..new
 \tjmp\tle_end
@@ -513,7 +550,7 @@ le_bool:
 le_int:
 \tmovq\t24(%rdi), %rdi
 \tmovq\t24(%rsi), %rsi
-\tcmpl\t%edi, %esi
+\tcmpl\t%esi, %edi
 \tjle\tle_true
 \tjmp\tle_false
 le_string:
@@ -524,6 +561,7 @@ le_string:
 \tjle\tle_true
 \tjmp\tle_false
 le_end:
+\tmovq\t%rbp, %rsp
 \tpopq\t%rbp
 \tret
 
@@ -701,7 +739,7 @@ coolstrcat:
 \tmovq    %rax, %rdi
 \tcall    calloc
 \tmovq    %rax, -32(%rbp)
-\tleal    .LCSCC0(%rip), %edx
+\tleaq    .LCSCC0(%rip), %rdx
 \tmovl    -20(%rbp), %eax
 \tmovslq  %eax, %rbx
 \tmovq    -48(%rbp), %rsi
@@ -714,7 +752,7 @@ coolstrcat:
 \tcall    snprintf
 \tmovq    -32(%rbp), %rax
 .LCSC11:
-\taddq    $40, %rsp
+\taddq    $48, %rsp
 \tpopq    %rbx
 \tleave
 \t.cfi_def_cfa 7, 8
@@ -814,7 +852,7 @@ coolgetstr:
 .LCGS14:
 \tcmpl\t$0, -4(%rbp)
 \tje\t.LCGS16
-\tleal\t.LCGSC1(%rip), %eax
+\tleaq\t.LCGSC1(%rip), %rax
 \tjmp \t.LCGS17
 .LCGS16:
 \tmovq\t-16(%rbp), %rax

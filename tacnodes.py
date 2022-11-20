@@ -59,6 +59,9 @@ class TacFunc:
 
     def append(self, tacnode:TacInst) -> None:
         self.insts.append(tacnode)
+
+    def replace(self, tacinst:TacInst, index) -> None:
+        self.insts[index] = tacinst
     
     def set_stack_space(self, space:int) -> None:
         self.stack_space = space

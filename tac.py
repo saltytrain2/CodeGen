@@ -189,6 +189,34 @@ class Tac(object):
         self.create_stack_vars(case_elem.expr)
         pass
 
+    def gen_case_labels(self, case_list:List[CaseElement], error_label:TacReg) -> List[TacLabel]:
+        def visit(self:Tac, class_name:str, case_labels:List[TacLabel]) -> TacLabel:
+            index = self.class_tags[class_name]
+            if case_labels[index] is not None:
+                return case_labels[index]
+
+            parent_class = self.parent_map[class_name]
+            case_labels[index] = visit(self, parent_class, case_labels)
+            return case_labels[index]
+
+        # generate assume every label jumps to the error condition
+        case_labels = [None for _ in self.class_tags]
+
+        for case_elem in case_list:
+            case_labels[self.class_tags[case_elem.get_type()]] = self.create_label()
+
+        # make our base case condition: if Object has not been assigned a label it has to fall through
+        if case_labels[self.class_tags["Object"]] is None:
+            case_labels[self.class_tags["Object"]] = error_label
+
+        for class_name, class_tag in self.class_tags.items():
+            # walk through the parent map, when we find the first non-error label we are good
+            case_labels[class_tag] = visit(self, class_name, case_labels)
+        
+        for label in case_labels:
+            assert isinstance(label, TacLabel), type(label)
+        return case_labels
+
     def add_tac_create(self, obj_type:str) -> TacReg:
         create_reg = self.create_reg()
         create_inst = TacCreate(obj_type, create_reg)
@@ -483,8 +511,6 @@ class Tac(object):
 
         elif isinstance(exp, Case):
             # set up the branches
-            case_labels = [self.create_label() for _ in exp.case_list]
-            case_end = self.create_label()
             cur_obj = self.tacgen_exp(exp.case_expr)
             void_branch = self.create_label()
             nonvoid_branch = self.create_label()
@@ -505,14 +531,18 @@ class Tac(object):
             # load in the classtag
             class_tag = self.create_reg()
             self.cur_tacfunc.append(TacLoad(cur_obj, class_tag, 0))
+
+            # generate all the labels
+            error_label = self.create_label()
+            case_labels = self.gen_case_labels(exp.case_list, error_label)
             
             # do comparison with classtags
-            for i, case_elem in enumerate(exp.case_list):
-                false_label = self.create_label()
+            for i, true_label in enumerate(case_labels):
+                false_label = self.create_label() if i != len(case_labels) - 1 else error_label
                 case_class_tag = self.create_reg()
-                self.cur_tacfunc.append(TacLoadImm(TacImm(self.class_tags[case_elem.get_type()]), case_class_tag))
+                self.cur_tacfunc.append(TacLoadImm(TacImm(i), case_class_tag))
                 self.cur_tacfunc.append(TacCmp(case_class_tag, class_tag))
-                self.cur_tacfunc.append(TacBr(TacCmpOp.EQ, case_labels[i], false_label))
+                self.cur_tacfunc.append(TacBr(TacCmpOp.EQ, true_label, false_label))
                 self.cur_tacfunc.append(false_label)
 
             # if we fell through, we now need to generate an error condition
@@ -525,8 +555,9 @@ class Tac(object):
             self.cur_tacfunc.append(TacUnreachable())
 
             # now generate the case expression labels
-            for i, case_elem in enumerate(exp.case_list):
-                self.cur_tacfunc.append(case_labels[i])
+            case_end = self.create_label()
+            for case_elem in exp.case_list:
+                self.cur_tacfunc.append(case_labels[self.class_tags[case_elem.get_type()]])
                 self.symbol_table[case_elem.get_name()].append(self.declaration_list.get_tacreg(case_elem))
                 self.cur_tacfunc.append(TacStore(cur_obj, self.declaration_list.get_tacreg(case_elem)))
                 elem_reg = self.tacgen_exp(case_elem.expr)

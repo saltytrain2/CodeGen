@@ -19,6 +19,17 @@ class DeclarationList(object):
     def clear(self) -> None:
         self.obj_list.clear()
 
+class MethodOffsetMap(object):
+        def __init__(self):
+            self.method_map:Dict[str, Dict[str, int]] = defaultdict(dict)
+
+        def add_method(self, class_name:str, method_name:str, offset:int) -> None:
+            self.method_map[class_name][method_name] = offset
+        
+        def get_method_offset(self, class_name:str, method_name:str) -> int:
+            return self.method_map[class_name][method_name]
+        
+
 class Tac(object):
     class_map:Dict[str, List[ClassAttribute]] = defaultdict(list)
     impl_map:Dict[str, List[ImplMethod]] = defaultdict(list)
@@ -26,7 +37,7 @@ class Tac(object):
     symbol_table:Dict[str, List[TacReg]] = defaultdict(list)
     class_tags:Dict[str, int] = defaultdict(int, {"Bool":0, "Int":1, "String":2, "Object":3, "IO":4})
     attr_table:Dict[str, int] = defaultdict(int)
-    method_offsets:Dict[str, int] = defaultdict(int)
+    method_offsets:MethodOffsetMap = MethodOffsetMap()
     cur_class = ""
 
     def __init__(self, class_map:List[ClassMapEntry], impl_map:List[ImplMapEntry],
@@ -41,7 +52,7 @@ class Tac(object):
         for entry in impl_map:
             self.impl_map[entry.class_name] = entry.method_list
             for i, method in enumerate(self.impl_map[entry.class_name]):
-                self.method_offsets[f"{entry.class_name}.{method.method_name}"] = 16 + 8 * i
+                self.method_offsets.add_method(entry.class_name, method.method_name, 16 + 8 * i)
 
         for entry in parent_map:
             self.parent_map[entry.child] = entry.parent
@@ -182,7 +193,7 @@ class Tac(object):
         create_reg = self.create_reg()
         create_inst = TacCreate(obj_type, create_reg)
         if obj_type == "SELF_TYPE":
-            create_inst.self_reg = self.self_reg()
+            create_inst.set_self_reg(self.self_reg())
         self.cur_tacfunc.append(create_inst)
         return create_reg
 
@@ -286,7 +297,6 @@ class Tac(object):
             str_reg = self.create_reg()
             prim_str_val = self.create_reg()
             self.cur_tacfunc.append(TacCreate("String", str_reg))
-            # TODO maybe I dont need to replace the \n and \t
             self.cur_tacfunc.append(TacLoadImm(TacStr(exp.val), prim_str_val))
             self.cur_tacfunc.append(TacStore(prim_str_val, str_reg, 3))
             return str_reg
@@ -322,13 +332,15 @@ class Tac(object):
             
             ret_reg = self.create_reg()
             # TODO somehow get the offset
-            func_str = f"{exp.class_type.name}.{exp.get_func_name()}" if exp.class_type is not None else f"{exp.get_func_name()}"
-            if isinstance(exp, SelfDispatch) or exp.obj.exp_type == "SELF_TYPE":
-                offset = self.method_offsets[f"{self.cur_class}.{exp.get_func_name()}"]
-            elif exp.class_type is not None:
-                offset = self.method_offsets[func_str]
+            func_str = f"{exp.class_type.name}.{exp.get_func_name()}" if isinstance(exp, StaticDispatch) else f"{exp.get_func_name()}"
+            if isinstance(exp, StaticDispatch):
+                class_name = exp.class_type.name
+            elif isinstance(exp, SelfDispatch) or exp.obj.exp_type == "SELF_TYPE":
+                class_name = self.cur_class
             else:
-                offset = self.method_offsets[f"{exp.obj.exp_type}.{exp.get_func_name()}"]
+                class_name = exp.obj.exp_type
+            
+            offset = self.method_offsets.get_method_offset(class_name, exp.get_func_name())
             self.cur_tacfunc.append(TacCall(func_str, param_regs, ret_reg, offset))
             return ret_reg
         elif isinstance(exp, Variable):

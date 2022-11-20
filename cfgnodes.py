@@ -71,16 +71,10 @@ class CFGBlock(object):
 
         Some special registers will always be allocated for certain needs, which are shown below
 
-        r12 -> self pointer
-        r13 -> trash register for arithmetic operations
-        r14 -> temporary register for immediates (we wont be using more than 1 per instruction)
-        r15 -> more trash registers
-        rcx -> immediate register
+        rdi -> self pointer
         rax -> subroutine return register and dynamic dispatch calling register
         rbp + offset -> stack temporaries
 
-        All other registers are allocated in a greedy manner, in the unoptimized tac all temporaries are spilled
-        so there will be enough space in caller-saved registers for every operation
         """
         offset = -8
         regs_to_alloc:List[TacReg] = []
@@ -89,8 +83,6 @@ class CFGBlock(object):
             if isinstance(inst, TacAlloc):
                 inst.dest.set_preg(PReg("%rbp", offset))
                 offset -= 8
-            elif isinstance(inst, TacRet):
-                pass
             elif isinstance(inst, TacStoreSelf):
                 inst.dest.set_preg(PReg("%rdi"))
             elif isinstance(inst, (TacCreate, TacCall, TacSyscall, TacLoadImm, TacBinOp, TacUnaryOp, TacLoad, TacLoadImm)):
@@ -112,7 +104,7 @@ class CFGBlock(object):
 
             # we want to find all live variables and mark variables that reside in caller-saved registers
             live_regs:List[PReg] = [
-                reg_allocator.get_physical_mapping(i) for i in inst.get_live_in() if reg_allocator.get_physical_mapping(i) is not None
+                reg_allocator.get_physical_mapping(i) for i in inst.get_live_out() if reg_allocator.get_physical_mapping(i) is not None
             ]
             live_volatile_regs:List[PReg] = [i for i in live_regs if i in reg_allocator.get_caller_regs()]
             inst.save_regs = live_volatile_regs

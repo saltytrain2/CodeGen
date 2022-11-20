@@ -446,6 +446,8 @@ class TacCreate(TacInst):
     def get_object(self) -> str:
         return self.object
 
+    def set_self_reg(self, self_reg:TacReg) -> str:
+        self.self_reg = self_reg
 
 class TacDeclare(TacInst):
     def __init__(self, object:str, dest:TacReg):

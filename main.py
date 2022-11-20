@@ -20,7 +20,7 @@ def main(argv):
     cfg.optimize()
     cfg.alloc_regs()
     cfg.resolve_stack_discipline()
-    cfg.debug_cfg()
+    #cfg.debug_cfg()
     #cfg.debug_interference()
     cgen = CodeGen(impl_map, cfg.to_tacfuncs())
     #print(cgen.gen_x86())

@@ -131,20 +131,20 @@ class CodeGen(object):
         elif isinstance(inst, TacMul):
             asm.append(f"\tmovq\t{inst.src2.get_preg_str()}, %rax\n")
             asm.append(f"\timull\t{inst.src1.get_preg_32_str()}, %eax\n")
-            asm.append(f"\tshlq\t$32, %rax\n")
-            asm.append(f"\tshrq\t$32, %rax\n")
+            asm.append(f"\tsalq\t$32, %rax\n")
+            asm.append(f"\tsarq\t$32, %rax\n")
             asm.append(f"\tmovq\t%rax, {inst.dest.get_preg_str()}\n")
         elif isinstance(inst, TacDiv):
             asm.append("\tmovq\t%rdx, %r15\n")
-            asm.append(f"\tmovl\t{inst.src1.get_preg_32_str()}, %eax\n")
+            asm.append(f"\tmovq\t{inst.src1.get_preg_str()}, %rax\n")
             asm.append("\txor\t%edx, %edx\n")
             asm.append("\tcdq\n")
             if inst.src2.get_preg() == PReg("%rdx"):
                 asm.append("\tidivl\t%r15d\n")
             else:
                 asm.append(f"\tidivl\t{inst.src2.get_preg_32_str()}\n")
-            asm.append(f"\tmovq\t%rax, {inst.dest.get_preg_str()}\n")
             asm.append("\tmovq\t%r15, %rdx\n")
+            asm.append(f"\tmovq\t%rax, {inst.dest.get_preg_str()}\n")
         elif isinstance(inst, TacLoad):
             mem_reg = inst.src.get_preg_str() if inst.offset is None else f"{inst.offset*8}({inst.src.get_preg_str()})"
             asm.append(f"\tmovq\t{mem_reg}, {inst.dest.get_preg_str()}\n")
@@ -197,14 +197,16 @@ class CodeGen(object):
                     asm.append("\txor\t%eax, %eax\n")
                 asm.append(f"\tcall\t{inst.func}\n")
             elif isinstance(inst, TacCreate):
-                if inst.self_reg is not None:
+                if inst.object != "SELF_TYPE":
+                    asm.append(f"\tcall\t{inst.object}..new\n")
+                else:
                     asm.append(f"\tmovq\t16({inst.self_reg.get_preg_str()}), %rax\n")
                     asm.append("\tmovq\t8(%rax), %rax\n")
                     asm.append("\tcall\t*%rax\n")
-                else:
-                    asm.append(f"\tcall\t{inst.object}..new\n")
             elif "." in inst.func:
-                asm.append(f"\tcall\t{inst.func}\n")
+                asm.append(f"\tleaq\t{inst.func.split('.')[0]}..vtable(%rip), %rax\n")
+                asm.append(f"\tmovq\t{inst.offset}(%rax), %rax\n")
+                asm.append(f"\tcall\t*%rax\n")
             else:
                 asm.append(f"\tmovq\t16(%rdi), %rax\n")
                 asm.append(f"\tmovq\t{inst.offset}(%rax), %rax\n")

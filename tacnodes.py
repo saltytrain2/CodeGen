@@ -422,7 +422,7 @@ class TacLoadStr(TacInst):
 
 class TacStore(TacInst):
     def __init__(self, src:TacReg, dest:TacReg, offset:int=None):
-        super().__init__(TacOp.STORE, {src}, None)
+        super().__init__(TacOp.STORE, {src, dest}, None)
         self.src = src
         self.dest = dest
         self.offset = offset

@@ -6,7 +6,7 @@ def _build_io_outint() -> TacFunc:
 \t.text
 \t.section\t.rodata
 .LIOINT:
-\t.asciz "%ld"
+\t.asciz "%d"
 \t.text
 \t.globl IO.out_int
 IO.out_int:
@@ -23,6 +23,7 @@ IO.out_int:
 \tmovq\t%rbp, %rsp
 \tpopq\t%rbp
 \tret
+
 """
 
 def _build_io_outstring():

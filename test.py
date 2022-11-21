@@ -8,7 +8,9 @@ import sys
 for cool_f in itertools.chain(glob.glob("tests/*.cl")):
     test_name = os.path.basename(cool_f)
     test_f = cool_f + "-type"
-    output_f = cool_f[:-3] + ".s"
+    input_file = cool_f[:-3] + ".txt"
+    asm_file = cool_f[:-3] + ".s"
+    output_f = cool_f[:-3] + ".OUTPUT"
     correct_f = output_f + ".correct"
 
     if os.path.exists(output_f):
@@ -17,7 +19,11 @@ for cool_f in itertools.chain(glob.glob("tests/*.cl")):
         os.remove(correct_f)
 
     subprocess.run(["../cool", "--type", cool_f])
-    correct_result = subprocess.run(["../cool", "--x86", test_f], capture_output=True, text=True)
+    #input_args = f"<{input_file}" if os.path.isfile(input_file) else ""
+    if os.path.exists(input_file):
+        correct_result = subprocess.run(f"../cool {cool_f} <{input_file} >{output_f}", shell=True, capture_output=True, text=True)
+    else:
+        correct_result = subprocess.run(f"../cool {cool_f} >{output_f}", shell=True, capture_output=True, text=True)
 
     file_created = os.path.isfile(output_f)
     if file_created:
@@ -25,7 +31,14 @@ for cool_f in itertools.chain(glob.glob("tests/*.cl")):
             correct_answer = f.read().strip()
         os.replace(output_f, correct_f)
 
-    our_result = subprocess.run([sys.executable, "main.py", test_f], capture_output=True, text=True)
+    subprocess.run(f"python3 main.py {test_f}", shell=True, capture_output=True, text=True)
+    
+    subprocess.run(f"gcc {asm_file}", shell=True)
+    if os.path.exists(input_file):
+        our_result = subprocess.run(f"./a.out <{input_file} >{output_f}", shell=True, capture_output=True, text=True)
+    else:
+        our_result = subprocess.run(f"./a.out >{output_f}", shell=True, capture_output=True, text=True)
+
     if our_result.stdout != correct_result.stdout or our_result.stderr != correct_result.stderr:
         print("FAIL:", test_name)
         with open("tests/our.stdout", "w") as f:

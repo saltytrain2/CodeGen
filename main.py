@@ -8,6 +8,7 @@ import sys
 
 
 def main(argv):
+    sys.setrecursionlimit(30000)
     cl_type_file = argv[1]
     with open(cl_type_file, 'r') as file:
         ast_lines = [line.rstrip("\n\r") for line in reversed(file.readlines())]
@@ -20,11 +21,7 @@ def main(argv):
     cfg.optimize()
     cfg.alloc_regs()
     cfg.resolve_stack_discipline()
-    #cfg.debug_cfg()
-    #cfg.debug_interference()
     cgen = CodeGen(impl_map, cfg.to_tacfuncs())
-    #print(cgen.gen_x86())
-    #cfg.build_interference_graph()
 
     with open(cl_type_file[:-8] + ".s", "w") as file:
         file.write(cgen.gen_x86())

@@ -104,7 +104,7 @@ class CFGBlock(object):
 
             # we want to find all live variables and mark variables that reside in caller-saved registers
             live_regs:List[PReg] = [
-                reg_allocator.get_physical_mapping(i) for i in inst.get_live_out() if reg_allocator.get_physical_mapping(i) is not None
+                reg_allocator.get_physical_mapping(i) for i in inst.get_live_out() if reg_allocator.get_physical_mapping(i) is not None and i != inst.dest
             ]
             live_volatile_regs:List[PReg] = [i for i in live_regs if i in reg_allocator.get_caller_regs()]
             inst.save_regs = live_volatile_regs
@@ -281,8 +281,9 @@ class CFGFunc(object):
     def fixed_alloc(self) -> None:
         """  
         This is the register allocation scheme that is solely for PA5
-        We spill all variables to memory, which gives us enough registers for register allocation w/o worrying
-        about not having enough registers to color the interference graph
+        We spill all declared variables to memory, leaving only temporaries inside registers
+        Although this results in incorrect code for lots of temporaries, it simplifies the register allocation scheme significantly
+        The PA6 implementation will correctly spill temporaries to memory when all the registers are filled
         """
         # update the interference graph
         self.reg_allocator.update_interference(self.interference)
@@ -346,8 +347,10 @@ class CFGFunc(object):
                 live_regs = inst.get_live_out()
                 for reg in live_regs:
                     self.interference[reg].update(live_regs)
-                    self.interference[reg].remove(reg)
                 pass
+            for reg in self.interference:
+                if reg in self.interference[reg]:
+                    self.interference[reg].remove(reg)
         pass
 
     def print_interference(self) -> None:

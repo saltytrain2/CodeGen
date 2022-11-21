@@ -127,16 +127,16 @@ class Tac(object):
         self.cur_tacfunc.append(TacStore(vtable_reg, self_reg, 2))
 
         for attr in self.class_map[c]:
-            if attr.attr_expr is not None:
-                attr_ret = self.tacgen_exp(attr.attr_expr)
-                self.cur_tacfunc.append(TacStore(attr_ret, self_reg, self.attr_table[attr.get_name()]))
-            elif attr.attr_type in {"Bool", "Int", "String"}:
+            if attr.attr_type in {"Bool", "Int", "String"}:
                 temp_reg = self.create_reg()
                 self.cur_tacfunc.append(TacCreate(attr.attr_type, temp_reg))
                 self.cur_tacfunc.append(TacStore(temp_reg, self_reg, self.attr_table[attr.get_name()]))
+            if attr.attr_kind == "initializer":
+                attr_ret = self.tacgen_exp(attr.attr_expr)
+                self.cur_tacfunc.append(TacStore(attr_ret, self_reg, self.attr_table[attr.get_name()]))
         
         self.cur_tacfunc.append(TacRet(self_reg))
-
+        self.symbol_table["self"].pop()
         self.processed_funcs.append(self.cur_tacfunc)
         self.num = temp_num
         self.declaration_list.clear()
@@ -174,6 +174,7 @@ class Tac(object):
 
         for param_name in param_names:
             self.symbol_table[param_name].pop()
+        self.symbol_table["self"].pop()
 
         self.num = temp_num
         self.declaration_list.clear()
@@ -226,6 +227,7 @@ class Tac(object):
         return create_reg
 
     def create_stack_vars(self, exp:Expression) -> None:
+        # search for any variables that we should put on the stack, primarily let variables and case variables
         if exp is None:
             return
 
@@ -302,10 +304,7 @@ class Tac(object):
                 self.cur_tacfunc.append(TacStore(res_reg, create_reg, 3))
                 return create_reg
             else:
-                # self.cur_tacfunc.append(TacStore(create_reg, self.declaration_map[exp]))
                 res_reg = self.create_reg()
-
-                # TODO For now, lets call the reference compiler helper methods
                 if isinstance(exp, Lt):
                     self.cur_tacfunc.append(TacSyscall("lt_helper", [lhs_reg, rhs_reg], res_reg))
                 elif isinstance(exp, Le):
@@ -359,7 +358,6 @@ class Tac(object):
                 param_regs.append(self.tacgen_exp(arg))
             
             ret_reg = self.create_reg()
-            # TODO somehow get the offset
             func_str = f"{exp.class_type.name}.{exp.get_func_name()}" if isinstance(exp, StaticDispatch) else f"{exp.get_func_name()}"
             if isinstance(exp, StaticDispatch):
                 class_name = exp.class_type.name
@@ -420,7 +418,6 @@ class Tac(object):
                 self.cur_tacfunc.append(TacStore(false_reg, dest_reg, 3))
                 self.cur_tacfunc.append(TacBr(true_label=end_label))
                 self.cur_tacfunc.append(end_label)
-            #self.cur_tacfunc.append(TacStore(dest_reg, self.declaration_map[exp]))
             return dest_reg
         elif isinstance(exp, If):
             true_label = self.create_label()
@@ -459,7 +456,7 @@ class Tac(object):
             false_reg = self.create_reg()
             self.cur_tacfunc.append(TacLoad(cond_reg, boolean_reg, 3))
             self.cur_tacfunc.append(TacLoadImm(TacImm(0), false_reg))
-            self.cur_tacfunc.append(TacCmp(boolean_reg, cond_reg))
+            self.cur_tacfunc.append(TacCmp(boolean_reg, false_reg))
             self.cur_tacfunc.append(TacBr(TacCmpOp.NE, while_body, while_end))
 
             self.cur_tacfunc.append(while_body)
@@ -478,6 +475,7 @@ class Tac(object):
             rhs_reg = self.tacgen_exp(exp.rhs)
             ret_reg = self.create_reg()
 
+            # we differentiate between a normal variable and a class attribute
             if self.symbol_table[exp.lhs.name]:
                 self.cur_tacfunc.append(TacStore(rhs_reg, self.symbol_table[exp.lhs.name][-1]))
                 self.cur_tacfunc.append(TacLoad(self.symbol_table[exp.lhs.name][-1], ret_reg))
@@ -489,7 +487,6 @@ class Tac(object):
             # adding additional registers into the symbol table
             for let_binding in exp.binding_list:
                 binding_name = let_binding.get_var_name()
-                self.symbol_table[binding_name].append(self.declaration_list.get_tacreg(let_binding))
                 if let_binding.has_init():
                     init_res = self.tacgen_exp(let_binding.val)
                     self.cur_tacfunc.append(TacStore(init_res, self.declaration_list.get_tacreg(let_binding)))
@@ -501,6 +498,7 @@ class Tac(object):
                     void_reg = self.create_reg()
                     self.cur_tacfunc.append(TacLoadImm(TacImm(0), void_reg))
                     self.cur_tacfunc.append(TacStore(void_reg, self.declaration_list.get_tacreg(let_binding)))
+                self.symbol_table[binding_name].append(self.declaration_list.get_tacreg(let_binding))
             
             ret_reg = self.tacgen_exp(exp.expr)
 

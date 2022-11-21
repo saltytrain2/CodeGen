@@ -42,14 +42,12 @@ class StringAllocator(object):
 
     def gen_x86_strings(self, asm:List[str]):
         for string_name in self.string_map:
+            # cool strings differ slightly than how normal strings are processed
             raw_string = string_name.replace("\\", "\\\\").replace("\\\\\"", "\\\\\\\"")
             asm.append(f"\t.text\n\t.globl {self.string_map[string_name]}\n")
             asm.append(f"{self.string_map[string_name]}:\n")
             asm.append(f"\t.asciz \"{raw_string}\"\n")
 
-            # for b in bytes(raw_string, "ascii"):
-            #     asm.append(f"\t.byte {b}\n")
-            # asm.append("\t.byte 0\n")
 
 
 class CodeGen(object):
@@ -117,7 +115,6 @@ class CodeGen(object):
     def gen_x86_inst(self, asm:List[str], inst:TacInst) -> str:
         if isinstance(inst, TacLabel):
             asm.append(f"{self.label_allocator.emit_label(inst)}:\n")
-        # TODO I currently assume that rax and r11 are trash registers and will never be allocated to variables
         elif isinstance(inst, TacDeclare):
             asm.append(f"\tmovq\t$0, {inst.dest.get_preg_str()}\n")
         elif isinstance(inst, TacAdd):
@@ -161,7 +158,6 @@ class CodeGen(object):
             elif isinstance(inst.imm, TacImm):
                 asm.append(f"\tmovq\t${inst.imm.val}, {dest}\n")
         elif isinstance(inst, (TacCall, TacSyscall, TacCreate)):
-            # TODO assume that all clobbered registers are getting clobbered
             stack:List[str] = []
             for reg in inst.save_regs:
                 asm.append(f"\tpushq\t{reg.get_name()}\n")
@@ -218,8 +214,7 @@ class CodeGen(object):
             while stack:
                 asm.append(f"\tpopq\t{stack.pop()}\n")
             
-            if inst.dest.get_preg != PReg("%rax"):
-                asm.append(f"\tmovq\t%rax, {inst.dest.get_preg_str()}\n")
+            asm.append(f"\tmovq\t%rax, {inst.dest.get_preg_str()}\n")
         elif isinstance(inst, TacRet):
             asm.append(f"\tmovq\t{inst.src.get_preg_str()}, %rax\n")
         elif isinstance(inst, TacCmp):

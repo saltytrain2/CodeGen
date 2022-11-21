@@ -33,7 +33,7 @@ class EmptyIntTree inherits IO {
 	getRight() : SELF_TYPE { self };
 	getCount() : Int { 0 };
 	add(val : Int) : Int { 0 };
-	print_inorder() : Object { true };
+	print_inorder() : Object { out_string("Nothing to Print\n") };
 	printVal() : Object { true };
 	insert(val : Int) : EmptyIntTree { (new IntTreeNode).init(val, self, self) };
 	double_root() : EmptyIntTree { self };

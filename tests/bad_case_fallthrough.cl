@@ -4,6 +4,7 @@ class Main inherits IO {
 		x : Bool => out_string("asdlfkj\n");
 		x : Int => out_string("zxcmvnb\n");
 		x : IO => out_string("qwioeru\n");
+		x: Object => out_string("\n");
 	esac
 	};
 };

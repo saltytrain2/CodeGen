@@ -360,6 +360,7 @@ class Main inherits Parse {
 
    main() : Object {
       {
+	 out_string("done reading\n");
 	 g.print_V();
          g.print_E();
       }

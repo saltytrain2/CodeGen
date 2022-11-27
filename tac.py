@@ -487,10 +487,7 @@ class Tac(object):
             # adding additional registers into the symbol table
             for let_binding in exp.binding_list:
                 binding_name = let_binding.get_var_name()
-                if let_binding.has_init():
-                    init_res = self.tacgen_exp(let_binding.val)
-                    self.cur_tacfunc.append(TacStore(init_res, self.declaration_list.get_tacreg(let_binding)))
-                elif let_binding.var_type.get_name() in {"Bool", "Int", "String"}:
+                if let_binding.var_type.get_name() in {"Bool", "Int", "String"}:
                     create_reg = self.create_reg()
                     self.cur_tacfunc.append(TacCreate(let_binding.var_type.get_name(), create_reg))
                     self.cur_tacfunc.append(TacStore(create_reg, self.declaration_list.get_tacreg(let_binding)))
@@ -498,6 +495,9 @@ class Tac(object):
                     void_reg = self.create_reg()
                     self.cur_tacfunc.append(TacLoadImm(TacImm(0), void_reg))
                     self.cur_tacfunc.append(TacStore(void_reg, self.declaration_list.get_tacreg(let_binding)))
+                if let_binding.has_init():
+                    init_res = self.tacgen_exp(let_binding.val)
+                    self.cur_tacfunc.append(TacStore(init_res, self.declaration_list.get_tacreg(let_binding)))
                 self.symbol_table[binding_name].append(self.declaration_list.get_tacreg(let_binding))
             
             ret_reg = self.tacgen_exp(exp.expr)

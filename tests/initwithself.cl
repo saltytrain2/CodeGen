@@ -1,10 +1,14 @@
 class Main inherits IO{
  x:SELF_TYPE <- self;
- y:Int <- 3;
+ y:Int;
  main(): Object {{
-             	   out_int(y);
+		   y <- 3;
+             	   print();
 		   y <- 10;
 		   x.out_int(y);
+		   x.print();
 		   out_string("alskdfj\n");
                 }};
+
+print():SELF_TYPE { out_int(y) };
 };

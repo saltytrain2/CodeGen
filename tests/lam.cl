@@ -397,13 +397,13 @@ class Main inherits Term {
 	      else
 		{
 		  e <- new_expr;
-		  out_string(" =>\n");
+		  out_string("++ =>\n");
 		  e.print_self();
 		}
 	      fi;
 	    }
           pool;
-	  out_string("\n");
+	  out_string("done\n");
           e;
 	};
     }

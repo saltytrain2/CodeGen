@@ -19,7 +19,11 @@ class CFG(object):
             #cfg_func.print_interference()
     
     def debug_interference(self) -> None:
-        pass
+        for cfg_func in self.cfg_list:
+            print(cfg_func.name)
+            cfg_func.print_interference()
+            print()
+        pass 
     
     def optimize(self) -> None:
         self.set_dominators()
@@ -38,6 +42,10 @@ class CFG(object):
             cfg.precolor_regs()
             cfg.alloc_regs()
         pass
+
+    def resolve_stack_discipline(self) -> None:
+        for cfg in self.cfg_list:
+            cfg.resolve_stack_discipline()
     
     def to_tacfuncs(self) -> List[TacFunc]:
         return [i.to_tacfunc() for i in self.cfg_list]
@@ -47,3 +55,4 @@ class CFG(object):
         # for cfg in self.cfg_list:
         #     cfg.calc_liveness()
         pass
+

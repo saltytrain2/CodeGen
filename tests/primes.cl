@@ -6,11 +6,11 @@
  *             Istvan Siposs, isiposs@cory, 12342921.
  *
  * This program generates primes in order without using any methods.
- * Actually, it does use three methods: those of IO to print out each
- * prime, and abort() to halt the program.  These methods are incidental,
- * however, to the information-processing functionality of the program.  We
- * could regard the attribute 'out's sequential values as our output, and
- * the string "halt" as our terminate signal.
+ * Actually, it does use three methods: those of IO to print out each prime, and
+ * abort() to halt the program.  These methods are incidental, however,
+ * to the information-processing functionality of the program.  We
+ * could regard the attribute 'out's sequential values as our output,
+ * and the string "halt" as our terminate signal.
  *
  * Naturally, using Cool this way is a real waste, basically reducing it 
  * to assembly without the benefit of compilation.  
@@ -30,7 +30,7 @@ class Main inherits IO {
     0 
   };
 
-  out : Int <-		-- out is our 'output'.  Its values are the primes.
+  out : Int <-		-- out is our 'output'.  It's values are the primes.
     {
       out_string("2 is trivially prime.\n");
       2;

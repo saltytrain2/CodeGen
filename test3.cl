@@ -1,9 +1,6 @@
 class Main 
 inherits IO {
-
-	main() : 
-	Object {
-		let balanced : EmptyIntTree <- new EmptyIntTree,
+	x:Object <- let balanced : EmptyIntTree <- new EmptyIntTree,
 			unbalanced : EmptyIntTree <- new EmptyIntTree in {
 			balanced <- balanced.insert(6);
 			balanced <- balanced.insert(8);
@@ -12,6 +9,8 @@ inherits IO {
 					balanced.print_inorder();
 					dummy <- new DummyClass;
 					dummy.print();
+					balanced <- balanced.insert(6);
+					balanced.print_inorder();
 				};
 			balanced <- balanced.insert(5);
 			balanced <- balanced.insert(2);
@@ -22,7 +21,16 @@ inherits IO {
 			balanced.printVal();
 			balanced.print_inorder();
 			balanced@EmptyIntTree.print_inorder();
-		}
+			let counter:Int <- 0 in 
+				while counter < 3 loop {
+					counter <- counter + 1;
+					balanced.printVal();
+					balanced <- balanced.getRight();
+				} pool
+			;};
+	main() : 
+	Object {
+		x.abort()
 	};
 };
 
@@ -30,7 +38,7 @@ class EmptyIntTree inherits IO {
 	isNull() : Bool { tRUE };
 	getVal() : Int { 0 };
 	getLeft() : EmptyIntTree { new EmptyIntTree };
-	getRight() : SELF_TYPE { self };
+	getRight() : EmptyIntTree { self };
 	getCount() : Int { 0 };
 	add(val : Int) : Int { 0 };
 	print_inorder() : Object { out_string("Nothing to Print\n") };
@@ -46,6 +54,7 @@ class IntTreeNode inherits EmptyIntTree {
 	mRight : EmptyIntTree <- new EmptyIntTree;
 	mDummy : EmptyIntTree;
 	
+	getRight():EmptyIntTree { mRight };
 	init(val : Int, left : EmptyIntTree, right : EmptyIntTree) : IntTreeNode {
 		{
 			mVal <- val;
@@ -101,8 +110,8 @@ class IntTreeNode inherits EmptyIntTree {
 
 
 
-class DummyClass {
+class DummyClass inherits IO {
 	print() : Object {
-		true
+		out_string("Dummy\n")
 	};
 };

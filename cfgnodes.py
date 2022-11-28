@@ -31,7 +31,6 @@ class CFGBlock(object):
         elif isinstance(last_inst, (TacRet, TacUnreachable)):
             return []
 
-        # error case
         raise Exception("last instruction is not a terminator")
     
     def get_live_in(self) -> Set[TacReg]:
@@ -74,7 +73,6 @@ class CFGBlock(object):
         rdi -> self pointer
         rax -> subroutine return register and dynamic dispatch calling register
         rbp + offset -> stack temporaries
-
         """
         offset = -8
         regs_to_alloc:List[TacReg] = []
@@ -91,8 +89,6 @@ class CFGBlock(object):
         
         for treg in regs_to_alloc:
             physical_reg = reg_allocator.get_unused_reg(treg)
-            #assert physical_reg is not None
-
             treg.set_preg(physical_reg)
 
         return abs(offset + 8)

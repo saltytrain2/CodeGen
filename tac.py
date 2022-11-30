@@ -131,6 +131,8 @@ class Tac(object):
                 temp_reg = self.create_reg()
                 self.cur_tacfunc.append(TacCreate(attr.attr_type, temp_reg))
                 self.cur_tacfunc.append(TacStore(temp_reg, self_reg, self.attr_table[attr.get_name()]))
+        
+        for attr in self.class_map[c]:
             if attr.attr_kind == "initializer":
                 attr_ret = self.tacgen_exp(attr.attr_expr)
                 self.cur_tacfunc.append(TacStore(attr_ret, self_reg, self.attr_table[attr.get_name()]))

@@ -148,6 +148,10 @@ class CodeGen(object):
         elif isinstance(inst, TacStore):
             mem_reg = inst.dest.get_preg_str() if inst.offset is None else f"{inst.offset*8}({inst.dest.get_preg_str()})"
             asm.append(f"\tmovq\t{inst.src.get_preg_str()}, {mem_reg}\n")
+        elif isinstance(inst, TacLoadPrim):
+            asm.append(f"\tmovq\t24({inst.src.get_preg_str()}), {inst.dest.get_preg_str()}\n")
+        elif isinstance(inst, TacStorePrim):
+            asm.append(f"\tmovq\t{inst.src.get_preg_str()}, 24({inst.dest.get_preg_str()})\n")
         elif isinstance(inst, TacLoadImm):
             dest = inst.dest.get_preg_str()
             if isinstance(inst.imm, TacImmLabel):

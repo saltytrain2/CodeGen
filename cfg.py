@@ -28,8 +28,8 @@ class CFG(object):
     
     def optimize(self) -> None:
         self.set_dominators()
-        #self.constant_propogate()
-        #self.calc_interference()
+        self.constant_propogate()
+        self.calc_interference()
         pass
     
     def calc_interference(self) -> None:

@@ -8,6 +8,7 @@ if TYPE_CHECKING:
     from cfgnodes import CFGFunc, CFGBlock
     from typing import List, Dict, Set, Tuple, Optional
 
+
 class FixedRegisterAllocator(object):
     def __init__(self, interference_graph:Dict[TacReg, Set[TacReg]]=None):
         self.return_reg:PReg = PReg("%rax")
@@ -115,7 +116,99 @@ class ConstantPropogator(object):
         if dest is None or not srcs:
             return
 
-        if isinstance(tacinst, TacLoadImm):
+        if isinstance(tacinst, TacLoadImm) and not isinstance(tacinst.imm, TacImmLabel):
+            self.constants[dest] = tacinst.imm.val
+            return
+        elif isinstance(tacinst, TacLoadStr):
+            self.constants[dest] = tacinst.string.val
+            return
+        
+        for src in srcs:
+            if src not in self.constants:
+                return
+
+        if isinstance(tacinst, (TacLoadPrim, TacStorePrim)):
+            self.constants[dest] = self.constants[tacinst.src]
+            self.variable_set.add(dest)
+            pass
+        elif isinstance(tacinst, TacBinOp):
+            if isinstance(tacinst, TacAdd):
+                self.constants[dest] = self.constants[tacinst.src1] + self.constants[tacinst.src2]
+            elif isinstance(tacinst, TacSub):
+                self.constants[dest] = self.constants[tacinst.src1] - self.constants[tacinst.src2]
+            elif isinstance(tacinst, TacMul):
+                self.constants[dest] = self.constants[tacinst.src1] * self.constants[tacinst.src2]
+            elif isinstance(tacinst, TacDiv):
+                self.constants[dest] = int(self.constants[tacinst.src1] / self.constants[tacinst.src2])
+        elif isinstance(tacinst, TacIcmp):
+            if tacinst.src1 not in self.constants or tacinst.src2 not in self.constants:
+                return
+
+            if tacinst.icmp_op == TacCmpOp.EQ:
+                self.constants[dest] = 1 if self.constants[tacinst.src1] == self.constants[tacinst.src2] else 0
+            elif tacinst.icmp_op == TacCmpOp.NE:
+                self.constants[dest] = 1 if self.constants[tacinst.src1] != self.constants[tacinst.src2] else 0
+            elif tacinst.icmp_op == TacCmpOp.LT:
+                self.constants[dest] = 1 if self.constants[tacinst.src1] < self.constants[tacinst.src2] else 0
+            elif tacinst.icmp_op == TacCmpOp.LE:
+                self.constants[dest] = 1 if self.constants[tacinst.src1] <= self.constants[tacinst.src2] else 0
+        elif isinstance(tacinst, TacUnaryOp):
+            if isinstance(tacinst, TacNegate):
+                self.constants[dest] = -self.constants[tacinst.src]
+            elif isinstance(tacinst, TacNot):
+                self.constants[dest] = 1 if self.constants[tacinst.src] == 0 else 0
+
+    def remove_objects_from_constants(self) -> None:
+        cpy = self.constants.copy()
+        for key in cpy:
+            if key in self.variable_set:
+                del self.constants[key]
+
+    def optimize_block(self, cfg: CFGBlock) -> bool:
+        changed = False
+        self.constants.clear()
+        for tacinst in cfg.inst_list:
+            self.add_to_constants(tacinst)
+        
+        self.remove_objects_from_constants()
+        
+        new_inst_list = []
+        for i, tacinst in enumerate(cfg.inst_list):
+            dest = tacinst.get_dest_operand()
+            if dest is None or dest not in self.constants:
+                new_inst_list.append(tacinst)
+                continue
+            
+            const_value = self.constants[dest]
+
+            if isinstance(const_value, int):
+                new_inst_list.append(TacLoadImm(TacImm(const_value), dest))
+            else:
+                new_inst_list.append(TacLoadImm(TacStr(const_value), dest))
+            changed = True
+        
+        cfg.inst_list = new_inst_list
+        return changed
+
+
+class DeadCodeEliminator(object):
+    def __init__(self, cfg_func: CFGFunc):
+        self.cfg_func = cfg_func
+        self.constants:Dict[TacReg, Union[int, str]] = {}
+        self.variable_set: set[PReg] = set()
+        self.voids:Dict[TacReg, bool] = {}
+
+    def optimize(self) -> None:
+        for cfg in self.cfg_func.cfg_blocks:
+            self.optimize_block(cfg)
+
+    def add_to_constants(self, tacinst:TacInst) -> None:
+        dest = tacinst.get_dest_operand()
+        srcs = tacinst.get_src_operands()
+        if dest is None or not srcs:
+            return
+
+        if isinstance(tacinst, TacLoadImm) and not isinstance(tacinst.imm, TacImmLabel):
             self.constants[dest] = tacinst.imm.val
             return
         elif isinstance(tacinst, TacLoadStr):

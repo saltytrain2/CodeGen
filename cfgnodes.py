@@ -86,7 +86,7 @@ class CFGBlock(object):
                 offset -= 8
             elif isinstance(inst, TacStoreSelf):
                 inst.dest.set_preg(PReg("%rdi"))
-            elif isinstance(inst, (TacCreate, TacCall, TacSyscall, TacLoadImm, TacBinOp, TacUnaryOp, TacLoad, TacLoadPrim, TacLoadImm)):
+            elif isinstance(inst, (TacCreate, TacCall, TacSyscall, TacBinOp, TacUnaryOp, TacLoad, TacLoadPrim, TacLoadImm)):
                 regs_to_alloc.append(inst.dest)
 
         
@@ -124,6 +124,7 @@ class CFGFunc(object):
         self.process_func(func)
         self.self_reg = func.self_reg
         self.num = func.num
+        self.callee_saved: list[PReg] = []
         self.reg_allocator.add_used_reg(PReg("%rdi"), self.self_reg)
     
     def process_func(self, func:TacFunc) -> None:
@@ -229,6 +230,7 @@ class CFGFunc(object):
         
         # create a mapping of physical registers to actual registers
         self.reg_allocator.construct_tac_reg_map()
+        self.callee_saved = self.reg_allocator.get_used_callee_regs()
 
     def precolor_regs(self) -> None:
         # some registers are forced due to the calling convention
@@ -288,7 +290,7 @@ class CFGFunc(object):
         if self.stack_space % 16 != 0:
             self.stack_space += 8
 
-        return TacFunc(self.name, self.params, insts, self.stack_space)
+        return TacFunc(self.name, self.params, insts, self.stack_space, self.callee_saved)
 
     def resolve_stack_discipline(self) -> None:
         # we want to make sure we are able to push/pop necessary registers when calling functions

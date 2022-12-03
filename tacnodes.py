@@ -40,12 +40,13 @@ class TacCmpOp(Enum):
 
 
 class TacFunc:
-    def __init__(self, name:str, params:List[TacReg]=None, insts:List[TacValue]=None, space:int=0, num: int=0):
+    def __init__(self, name:str, params:List[TacReg]=None, insts:List[TacValue]=None, space:int=0, callee_saved: list[PReg]=None, num: int=0):
         self.name = name
         self.params = params if params is not None else []
         self.insts = insts if insts is not None else []
         self.stack_space = space
         self.self_reg = None
+        self.callee_saved = callee_saved if callee_saved is not None else []
         self.num = num
 
     def __repr__(self) -> str:

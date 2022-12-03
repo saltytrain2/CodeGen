@@ -103,10 +103,16 @@ class CodeGen(object):
         # allocate all space on the stack
         asm.append(f"\tsubq\t${tacfunc.stack_space}, %rsp\n")
         assert tacfunc.stack_space % 8 == 0
-        self.stack_alignment = 2 + int(tacfunc.stack_space / 8)
+        self.stack_alignment = int(tacfunc.stack_space / 8) + len(tacfunc.callee_saved)
+
+        for callee_saved in tacfunc.callee_saved:
+            asm.append(f"\tpushq\t{callee_saved.get_name()}\n")
 
         for inst in tacfunc.insts:
             self.gen_x86_inst(asm, inst)
+
+        for callee_saved in tacfunc.callee_saved:
+            asm.append(f"\tpopq\t{callee_saved.get_name()}\n")
         
         asm.append("\tmovq\t%rbp, %rsp\n")
         asm.append("\tpopq\t%rbp\n")
@@ -132,15 +138,15 @@ class CodeGen(object):
             asm.append(f"\tsarq\t$32, %rax\n")
             asm.append(f"\tmovq\t%rax, {inst.dest.get_preg_str()}\n")
         elif isinstance(inst, TacDiv):
-            asm.append("\tmovq\t%rdx, %r15\n")
+            asm.append("\tmovq\t%rdx, %r11\n")
             asm.append(f"\tmovq\t{inst.src1.get_preg_str()}, %rax\n")
             asm.append("\txor\t%edx, %edx\n")
             asm.append("\tcdq\n")
             if inst.src2.get_preg() == PReg("%rdx"):
-                asm.append("\tidivl\t%r15d\n")
+                asm.append("\tidivl\t%r11d\n")
             else:
                 asm.append(f"\tidivl\t{inst.src2.get_preg_32_str()}\n")
-            asm.append("\tmovq\t%r15, %rdx\n")
+            asm.append("\tmovq\t%r11, %rdx\n")
             asm.append(f"\tmovq\t%rax, {inst.dest.get_preg_str()}\n")
         elif isinstance(inst, TacLoad):
             mem_reg = inst.src.get_preg_str() if inst.offset is None else f"{inst.offset*8}({inst.src.get_preg_str()})"
@@ -169,19 +175,22 @@ class CodeGen(object):
 
             # move the parameters into place
             param_registers = ["%rdi", "%rsi", "%rdx", "%rcx", "%r8", "%r9"]
-            params = list(reversed(inst.args))
-            i = 0
-            while params and i < 6:
-                param = params.pop()
-                asm.append(f"\tmovq\t{param.get_preg_str()}, {param_registers[i]}\n")
-                i += 1
+            reg_params = inst.args[:6]
+            visited_reg_params = set()
+            for i, arg in enumerate(inst.args):
+                if arg.get_preg_str() in param_registers:
+                    asm.append(f"\tmovq\t{arg.get_preg_str()}, {param_registers[i]}\n")
+                    visited_reg_params.add(i)
+            for i, arg in enumerate(inst.args):
+                if i not in visited_reg_params:
+                    asm.append(f"\tmovq\t{arg.get_preg_str()}, {param_registers[i]}\n")
             
-            # if there are any leftover parameters, push them onto the stack
-            for param in params:
+            stack_params = inst.args[6:]
+            for param in reversed(stack_params):
                 if param.isstack:
-                    asm.append(f"\tmovq\t{param.get_preg_str()}, %r15\n")
-                    asm.append("\tpushq\t%r15\n")
-                    stack.append("%r15")
+                    asm.append(f"\tmovq\t{param.get_preg_str()}, %r11\n")
+                    asm.append("\tpushq\t%r11\n")
+                    stack.append("%r11")
                 else:
                     asm.append(f"\tpushq\t{param.get_preg_str()}\n")
                     stack.append(param.get_preg_str())

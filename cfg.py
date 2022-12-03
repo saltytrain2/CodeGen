@@ -28,8 +28,8 @@ class CFG(object):
     
     def optimize(self) -> None:
         self.set_dominators()
-        self.constant_propogate()
-        self.calc_interference()
+        #self.constant_propogate()
+        #self.calc_interference()
         pass
     
     def calc_interference(self) -> None:
@@ -42,7 +42,6 @@ class CFG(object):
 
     def alloc_regs(self) -> None:
         for cfg in self.cfg_list:
-            cfg.precolor_regs()
             cfg.alloc_regs()
         pass
 

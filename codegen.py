@@ -174,26 +174,27 @@ class CodeGen(object):
                 stack.append(reg.get_name())
 
             # move the parameters into place
-            param_registers = ["%rdi", "%rsi", "%rdx", "%rcx", "%r8", "%r9"]
-            reg_params = inst.args[:6]
-            visited_reg_params = set()
-            for i, arg in enumerate(inst.args):
-                if arg.get_preg_str() in param_registers:
-                    asm.append(f"\tmovq\t{arg.get_preg_str()}, {param_registers[i]}\n")
-                    visited_reg_params.add(i)
-            for i, arg in enumerate(inst.args):
-                if i not in visited_reg_params:
-                    asm.append(f"\tmovq\t{arg.get_preg_str()}, {param_registers[i]}\n")
+            self.move_params(asm, inst.args, stack)
+            # param_registers = ["%rdi", "%rsi", "%rdx", "%rcx", "%r8", "%r9"]
+            # reg_params = inst.args[:6]
+            # visited_reg_params = set()
+            # for i, arg in enumerate(reg_params):
+            #     if arg.get_preg_str() in param_registers:
+            #         asm.append(f"\tmovq\t{arg.get_preg_str()}, {param_registers[i]}\n")
+            #         visited_reg_params.add(i)
+            # for i, arg in enumerate(reg_params):
+            #     if i not in visited_reg_params:
+            #         asm.append(f"\tmovq\t{arg.get_preg_str()}, {param_registers[i]}\n")
             
-            stack_params = inst.args[6:]
-            for param in reversed(stack_params):
-                if param.isstack:
-                    asm.append(f"\tmovq\t{param.get_preg_str()}, %r11\n")
-                    asm.append("\tpushq\t%r11\n")
-                    stack.append("%r11")
-                else:
-                    asm.append(f"\tpushq\t{param.get_preg_str()}\n")
-                    stack.append(param.get_preg_str())
+            # stack_params = inst.args[6:]
+            # for param in reversed(stack_params):
+            #     if param.isstack:
+            #         asm.append(f"\tmovq\t{param.get_preg_str()}, %r11\n")
+            #         asm.append("\tpushq\t%r11\n")
+            #         stack.append("%r11")
+            #     else:
+            #         asm.append(f"\tpushq\t{param.get_preg_str()}\n")
+            #         stack.append(param.get_preg_str())
             
             # 16 byte align the pushes
             if (self.stack_alignment + len(stack)) & 1:
@@ -252,4 +253,30 @@ class CodeGen(object):
             asm.append(f"\tmovq\t{inst.src.get_preg_str()}, {inst.dest.get_preg_str()}\n")
             asm.append(f"\tneg\t{inst.dest.get_preg_str()}\n")  
         elif isinstance(inst, TacUnreachable):
-            asm.append(f"\tnop\n") 
+            asm.append(f"\tnop\n")
+
+    def move_params(self, asm: List[str], params: List[TacReg], stack: List[PReg]) -> None:
+        param_registers = ["%rdi", "%rsi", "%rdx", "%rcx", "%r8", "%r9"]
+        stack_params = params[6:]
+        for param in reversed(stack_params):
+            if param.isstack:
+                asm.append(f"\tmovq\t{param.get_preg_str()}, %r11\n")
+                asm.append("\tpushq\t%r11\n")
+                stack.append("%r11")
+            else:
+                asm.append(f"\tpushq\t{param.get_preg_str()}\n")
+                stack.append(param.get_preg_str())
+
+        reg_params = params[:6]
+        param_map = {arg.get_preg_str():param_registers[i] for i, arg in enumerate(reg_params) if arg.get_preg_str() != param_registers[i]}
+
+        while param_map:
+            can_add = []
+            for key, value in param_map.items():
+                if value not in param_map.keys():
+                    can_add.append((key, value))
+
+            for key, value in can_add:
+                asm.append(f"\tmovq\t{key}, {value}\n")
+                del param_map[key]
+        pass

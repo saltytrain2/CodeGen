@@ -1,6 +1,6 @@
 from __future__ import annotations
 from cfgnodes import *
-from optimizations import ConstantPropogator
+from optimizations import ConstantPropogator, DeadCodeEliminator
 
 class CFG(object):
     def __init__(self, tacfuncs:List[TacFunc]):
@@ -28,7 +28,9 @@ class CFG(object):
     
     def optimize(self) -> None:
         self.set_dominators()
+        
         #self.constant_propogate()
+        #self.dead_code_elimination()
         #self.calc_interference()
         pass
     
@@ -63,4 +65,9 @@ class CFG(object):
             optimizer = ConstantPropogator(cfg)
             optimizer.optimize()
         pass
+
+    def dead_code_elimination(self) -> None:
+        for cfg in self.cfg_list:
+            optimizer = DeadCodeEliminator(cfg)
+            optimizer.optimize()
 

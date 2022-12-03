@@ -22,10 +22,11 @@ class FixedRegisterAllocator(object):
         self.interference_graph = interference_graph if interference_graph is not None else defaultdict(set)
         self.physical_reg_map:Dict[PReg, List[TacReg]] = defaultdict(list)
         self.tac_reg_map:Dict[TacReg, PReg] = {}
+        self.used_callee_regs: set[PReg] = set()
         self.reset()
 
-    def get_caller_reg(self, input_reg:TacReg) -> TacReg:
-        for physical_reg in self.caller_saved[1:-1]:
+    def get_caller_reg(self, input_reg:TacReg) -> PReg:
+        for physical_reg in self.caller_saved[1:-2]:
             # if the register is unused, great
             if not self.physical_reg_map[physical_reg]:
                 self.physical_reg_map[physical_reg].append(input_reg)
@@ -44,7 +45,7 @@ class FixedRegisterAllocator(object):
         # we fell through, we found nothing
         return None
 
-    def get_callee_reg(self, input_reg:TacReg) -> TacReg:
+    def get_callee_reg(self, input_reg:TacReg) -> PReg:
         for physical_reg in self.callee_saved:
             # if the register is unused, yay
             if not self.physical_reg_map[physical_reg]:
@@ -74,14 +75,16 @@ class FixedRegisterAllocator(object):
     
     def get_unused_reg(self, tacreg:TacReg) -> None:
         # lets try to get a caller-saved register
+        reg = self.get_callee_reg(tacreg)
+        if reg is not None:
+            self.used_callee_regs.add(reg)
+            return reg
+
         reg = self.get_caller_reg(tacreg)
         if reg is not None:
             return reg
 
-        raise Exception("We ran out of caller saved regs, you need to start using the other registers")
-        # try to get a callee-saved register instead
-        reg = self.get_callee_reg(tacreg)
-        return reg
+        raise Exception("We ran out of regs, you need to start spilling to memory")
 
     def reset(self) -> None:
         self.physical_reg_map.clear()
@@ -97,6 +100,9 @@ class FixedRegisterAllocator(object):
     
     def get_physical_mapping(self, treg:TacReg):
         return self.tac_reg_map[treg] if treg in self.tac_reg_map else None
+
+    def get_used_callee_regs(self) -> list[PReg]:
+        return list(self.used_callee_regs)
 
 
 class ConstantPropogator(object):

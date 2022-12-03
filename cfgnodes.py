@@ -79,13 +79,14 @@ class CFGBlock(object):
         offset = -8
         regs_to_alloc:List[TacReg] = []
         # before we just start allocating registers, we fix all returns that are supposed to be fixed
+
         for inst in self.inst_list:
             if isinstance(inst, TacAlloc):
                 inst.dest.set_preg(PReg("%rbp", offset))
                 offset -= 8
             elif isinstance(inst, TacStoreSelf):
                 inst.dest.set_preg(PReg("%rdi"))
-            elif isinstance(inst, (TacCreate, TacCall, TacSyscall, TacLoadImm, TacBinOp, TacUnaryOp, TacLoad, TacLoadImm)):
+            elif isinstance(inst, (TacCreate, TacCall, TacSyscall, TacBinOp, TacUnaryOp, TacLoad, TacLoadImm)):
                 regs_to_alloc.append(inst.dest)
 
         
@@ -124,10 +125,11 @@ class FixedRegisterAllocator(object):
         self.interference_graph = interference_graph if interference_graph is not None else defaultdict(set)
         self.physical_reg_map:Dict[PReg, List[TacReg]] = defaultdict(list)
         self.tac_reg_map:Dict[TacReg, PReg] = {}
+        self.used_callee_regs: set[PReg] = set()
         self.reset()
 
-    def get_caller_reg(self, input_reg:TacReg) -> TacReg:
-        for physical_reg in self.caller_saved[1:-1]:
+    def get_caller_reg(self, input_reg:TacReg) -> PReg:
+        for physical_reg in self.caller_saved[1:-2]:
             # if the register is unused, great
             if not self.physical_reg_map[physical_reg]:
                 self.physical_reg_map[physical_reg].append(input_reg)
@@ -146,7 +148,7 @@ class FixedRegisterAllocator(object):
         # we fell through, we found nothing
         return None
 
-    def get_callee_reg(self, input_reg:TacReg) -> TacReg:
+    def get_callee_reg(self, input_reg:TacReg) -> PReg:
         for physical_reg in self.callee_saved:
             # if the register is unused, yay
             if not self.physical_reg_map[physical_reg]:
@@ -175,15 +177,18 @@ class FixedRegisterAllocator(object):
         self.physical_reg_map[physical_reg].append(treg)
     
     def get_unused_reg(self, tacreg:TacReg) -> None:
+        # lets try to get a callee-saved register
+        reg = self.get_callee_reg(tacreg)
+        if reg is not None:
+            self.used_callee_regs.add(reg)
+            return reg
+
         # lets try to get a caller-saved register
         reg = self.get_caller_reg(tacreg)
         if reg is not None:
             return reg
 
-        raise Exception("We ran out of caller saved regs, you need to start using the other registers")
-        # try to get a callee-saved register instead
-        reg = self.get_callee_reg(tacreg)
-        return reg
+        raise Exception("We ran out of regs, you need to start spilling registers to memory")
 
     def reset(self) -> None:
         self.physical_reg_map.clear()
@@ -200,6 +205,9 @@ class FixedRegisterAllocator(object):
     def get_physical_mapping(self, treg:TacReg):
         return self.tac_reg_map[treg] if treg in self.tac_reg_map else None
 
+    def get_used_callee_regs(self) -> list[PReg]:
+        return list(self.used_callee_regs)
+
 
 class CFGFunc(object):
     def __init__(self, func:TacFunc):
@@ -212,6 +220,7 @@ class CFGFunc(object):
         self.reg_allocator:FixedRegisterAllocator = FixedRegisterAllocator()
         self.process_func(func)
         self.self_reg = func.self_reg
+        self.callee_saved: list[PReg] = []
         self.reg_allocator.add_used_reg(PReg("%rdi"), self.self_reg)
     
     def process_func(self, func:TacFunc) -> None:
@@ -307,6 +316,8 @@ class CFGFunc(object):
         
         # create a mapping of physical registers to actual registers
         self.reg_allocator.construct_tac_reg_map()
+        self.callee_saved = self.reg_allocator.get_used_callee_regs()
+        # self.stack_space += 8 * len(self.callee_saved)
         pass
 
     def precolor_regs(self) -> None:
@@ -357,17 +368,6 @@ class CFGFunc(object):
         for reg, reg_set in self.interference.items():
             print(f"{reg}: {reg_set if reg_set else ''}")
         pass
-
-    def linear_scan_alloc(self) -> None:
-        def expire_old_intervals(active:List[int], start:int):
-            while active[0] > start:
-                heappop(active)
-            self.reg_allocator.dealloc_reg()
-
-        def spill_at_interval():
-            pass
-        pass
-        #for inst in self.
     
     def to_tacfunc(self) -> TacFunc:
         insts = []
@@ -378,7 +378,7 @@ class CFGFunc(object):
         if self.stack_space % 16 != 0:
             self.stack_space += 8
 
-        return TacFunc(self.name, self.params, insts, self.stack_space)
+        return TacFunc(self.name, self.params, insts, self.stack_space, self.callee_saved)
 
     def resolve_stack_discipline(self) -> None:
         # we want to make sure we are able to push/pop necessary registers when calling functions

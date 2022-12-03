@@ -111,7 +111,7 @@ class CodeGen(object):
         for inst in tacfunc.insts:
             self.gen_x86_inst(asm, inst)
 
-        for callee_saved in tacfunc.callee_saved:
+        for callee_saved in reversed(tacfunc.callee_saved):
             asm.append(f"\tpopq\t{callee_saved.get_name()}\n")
         
         asm.append("\tmovq\t%rbp, %rsp\n")

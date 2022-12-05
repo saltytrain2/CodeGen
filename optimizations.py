@@ -108,6 +108,12 @@ class FixedRegisterAllocator(object):
 
 
 class ConstantPropogator(object):
+    class TOP(object):
+        pass
+
+    class BOT(object):
+        pass
+
     def __init__(self, cfg_func: CFGFunc):
         self.cfg_func = cfg_func
         self.constants:Dict[TacReg, Union[int, str]] = {}
@@ -117,11 +123,16 @@ class ConstantPropogator(object):
     def optimize(self) -> None:
         for cfg in self.cfg_func.cfg_blocks:
             self.optimize_block(cfg)
+        
+        self.cfg_func.calc_liveness()
 
     def add_to_constants(self, tacinst:TacInst) -> None:
         dest = tacinst.get_dest_operand()
         srcs = tacinst.get_src_operands()
         if dest is None or not srcs:
+            return
+        
+        if dest in self.constants and isinstance(self.constants[dest], self.TOP):
             return
 
         if isinstance(tacinst, TacLoadImm) and not isinstance(tacinst.imm, TacImmLabel):
@@ -132,7 +143,7 @@ class ConstantPropogator(object):
             return
         
         for src in srcs:
-            if src not in self.constants:
+            if src not in self.constants or isinstance(self.constants[src], self.TOP):
                 return
 
         if isinstance(tacinst, (TacLoadPrim, TacStorePrim)):
@@ -165,6 +176,8 @@ class ConstantPropogator(object):
                 self.constants[dest] = -self.constants[tacinst.src]
             elif isinstance(tacinst, TacNot):
                 self.constants[dest] = 1 if self.constants[tacinst.src] == 0 else 0
+        else:
+            self.constants[dest] = self.TOP()
 
     def remove_objects_from_constants(self) -> None:
         cpy = self.constants.copy()
@@ -174,7 +187,7 @@ class ConstantPropogator(object):
 
     def optimize_block(self, cfg: CFGBlock) -> bool:
         changed = False
-        self.constants.clear()
+        # self.constants.clear()
         for tacinst in cfg.inst_list:
             self.add_to_constants(tacinst)
         
@@ -183,7 +196,7 @@ class ConstantPropogator(object):
         new_inst_list = []
         for i, tacinst in enumerate(cfg.inst_list):
             dest = tacinst.get_dest_operand()
-            if dest is None or dest not in self.constants:
+            if dest is None or dest not in self.constants or isinstance(self.constants[dest], self.TOP):
                 new_inst_list.append(tacinst)
                 continue
             
@@ -202,17 +215,20 @@ class ConstantPropogator(object):
 class DeadCodeEliminator(object):
     def __init__(self, cfg_func: CFGFunc):
         self.cfg_func = cfg_func
-        self.constants:Dict[TacReg, Union[int, str]] = {}
-        self.variable_set: set[PReg] = set()
-        self.voids:Dict[TacReg, bool] = {}
 
     def optimize(self) -> None:
-        for cfg in self.cfg_func.cfg_blocks:
-            self.optimize_block(cfg)
-        
-        while self.cfg_func.calc_liveness():
+        pass
+
+        while True:
+            changed = False
             for cfg in self.cfg_func.cfg_blocks:
-                self.optimize_block(cfg)
+                changed |= self.optimize_block(cfg)
+            self.cfg_func.calc_liveness()
+
+            if not changed:
+                break
 
     def optimize_block(self, cfg: CFGBlock) -> bool:
-        cfg.inst_list[:] = [inst for inst in cfg.inst_list if inst.get_dest_operand() is None or inst.get_dest_operand() in inst.live_out]
+        old_length = len(cfg.inst_list)
+        cfg.inst_list[:] = [inst for inst in cfg.inst_list if isinstance(inst, (TacAlloc, TacCall, TacSyscall)) or inst.get_dest_operand() is None or inst.get_dest_operand() in inst.live_out]
+        return len(cfg.inst_list) != old_length

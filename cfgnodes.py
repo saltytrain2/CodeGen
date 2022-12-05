@@ -86,6 +86,7 @@ class CFGBlock(object):
                 offset -= 8
             elif isinstance(inst, TacStoreSelf):
                 inst.dest.set_preg(PReg("%r12"))
+                reg_allocator.add_used_reg(PReg("%r12"), inst.dest)
             elif isinstance(inst, (TacCreate, TacCall, TacSyscall, TacBinOp, TacUnaryOp, TacLoad, TacLoadPrim, TacLoadImm)):
                 regs_to_alloc.append(inst.dest)
 
@@ -172,16 +173,21 @@ class CFGFunc(object):
         return temp
     
     def calc_liveness(self) -> bool:
+        for cfg_block in self.cfg_blocks:
+            cfg_block.live_out.clear()
+            cfg_block.live_in.clear()
+
         # make sure self is set as a global variable: must always persist
         self.cfg_blocks[-1].live_out.add(self.self_reg)
-        worklist = deque([cfg_block for cfg_block in reversed(self.cfg_blocks)])
-        changed = False
-        while worklist:
-            cur_block = worklist.popleft()
-            if cur_block.calc_liveness():
-                changed = True
-                for pred in cur_block.preds:
-                    worklist.append(pred)
+        work_list:Deque[CFGBlock] = deque([i for i in reversed(self.cfg_blocks)])
+        self.cfg_blocks[-1].live_out.add(self.self_reg)
+        while work_list:
+            cfg_block = work_list.popleft()
+            changed = cfg_block.calc_liveness()
+
+            if changed:
+                for pred in cfg_block.preds:
+                    work_list.append(pred)
         
         return changed
         # for cfg_block in reversed(self.cfg_blocks):

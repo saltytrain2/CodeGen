@@ -29,9 +29,9 @@ class CFG(object):
     def optimize(self) -> None:
         self.set_dominators()
         
-        #self.constant_propogate()
-        #self.dead_code_elimination()
-        #self.calc_interference()
+        self.constant_propogate()
+        self.dead_code_elimination()
+        self.calc_interference()
         pass
     
     def calc_interference(self) -> None:

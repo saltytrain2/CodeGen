@@ -206,8 +206,8 @@ class TacErrorStr(TacImm):
 class TacInst(object):
     def __init__(self, op:TacOp, livegen:Set[TacValue]=None, livekill:Set[TacValue]=None):
         self.op = op
-        self.livegen = {i for i in livegen if isinstance(i, TacReg) and not i.isstack} if livegen is not None else set()
-        self.livekill = {i for i in livekill if isinstance(i, TacReg) and not i.isstack} if livekill is not None else set()
+        self.livegen = {i for i in livegen if isinstance(i, TacReg)} if livegen is not None else set()
+        self.livekill = {i for i in livekill if isinstance(i, TacReg)} if livekill is not None else set()
         self.live_in = set()
         self.live_out = set()
 

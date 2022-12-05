@@ -1,8 +1,9 @@
 from __future__ import annotations
 from tacnodes import *
-from collections import deque
+from collections import deque, defaultdict
 from typing import Deque
 from heapq import heappush, heappop
+from optimizations import FixedRegisterAllocator, ConstantPropogator
 
 
 class CFGBlock(object):
@@ -84,8 +85,9 @@ class CFGBlock(object):
                 inst.dest.set_preg(PReg("%rbp", offset))
                 offset -= 8
             elif isinstance(inst, TacStoreSelf):
-                inst.dest.set_preg(PReg("%rdi"))
-            elif isinstance(inst, (TacCreate, TacCall, TacSyscall, TacLoadImm, TacBinOp, TacUnaryOp, TacLoad, TacLoadImm)):
+                inst.dest.set_preg(PReg("%r12"))
+                reg_allocator.add_used_reg(PReg("%r12"), inst.dest)
+            elif isinstance(inst, (TacCreate, TacCall, TacSyscall, TacBinOp, TacUnaryOp, TacLoad, TacLoadPrim, TacLoadImm)):
                 regs_to_alloc.append(inst.dest)
 
         
@@ -111,96 +113,6 @@ class CFGBlock(object):
         pass
 
 
-class FixedRegisterAllocator(object):
-    def __init__(self, interference_graph:Dict[TacReg, Set[TacReg]]=None):
-        self.return_reg:PReg = PReg("%rax")
-        self.self_reg:PReg = PReg("%rdi")
-        self.caller_saved:List[PReg] = [
-            PReg("%rdi"), PReg("%rsi"), PReg("%rdx"), PReg("%rcx"), PReg("%r8"), PReg("%r9"), PReg("%r10"), PReg("%r11"), PReg("%rax")
-        ]
-        self.callee_saved:List[PReg] = [
-            PReg("%rbx"), PReg("%r12"), PReg("%r13"), PReg("%r14"), PReg("%r15")
-        ]
-        self.interference_graph = interference_graph if interference_graph is not None else defaultdict(set)
-        self.physical_reg_map:Dict[PReg, List[TacReg]] = defaultdict(list)
-        self.tac_reg_map:Dict[TacReg, PReg] = {}
-        self.reset()
-
-    def get_caller_reg(self, input_reg:TacReg) -> TacReg:
-        for physical_reg in self.caller_saved[1:-1]:
-            # if the register is unused, great
-            if not self.physical_reg_map[physical_reg]:
-                self.physical_reg_map[physical_reg].append(input_reg)
-                return physical_reg
-            
-            conflict = False
-            for tac_reg in self.physical_reg_map[physical_reg]:
-                # we can reuse the register since they do not overlap
-                if tac_reg in self.interference_graph[input_reg]:
-                    conflict = True
-            
-            if not conflict:
-                self.physical_reg_map[physical_reg].append(input_reg)
-                return physical_reg
-
-        # we fell through, we found nothing
-        return None
-
-    def get_callee_reg(self, input_reg:TacReg) -> TacReg:
-        for physical_reg in self.callee_saved:
-            # if the register is unused, yay
-            if not self.physical_reg_map[physical_reg]:
-                self.physical_reg_map[physical_reg].append(input_reg)
-                return physical_reg
-            
-            conflict = False
-            for tac_reg in self.physical_reg_map[physical_reg]:
-                # we can reuse the register since they do not overlap
-                if tac_reg in self.interference_graph[input_reg]:
-                    conflict = True
-            
-            if not conflict:
-                self.physical_reg_map[physical_reg].append(input_reg)
-                return physical_reg
-        # we fell through, we found nothing
-        return None
-    
-    def get_caller_regs(self) -> Set[PReg]:
-        return set(self.caller_saved)
-
-    def get_callee_regs(self) -> Set[PReg]:
-        return set(self.callee_saved)
-
-    def add_used_reg(self, physical_reg:PReg, treg:TacReg) -> None:
-        self.physical_reg_map[physical_reg].append(treg)
-    
-    def get_unused_reg(self, tacreg:TacReg) -> None:
-        # lets try to get a caller-saved register
-        reg = self.get_caller_reg(tacreg)
-        if reg is not None:
-            return reg
-
-        raise Exception("We ran out of caller saved regs, you need to start using the other registers")
-        # try to get a callee-saved register instead
-        reg = self.get_callee_reg(tacreg)
-        return reg
-
-    def reset(self) -> None:
-        self.physical_reg_map.clear()
-        self.tac_reg_map.clear()
-
-    def construct_tac_reg_map(self) -> None:
-        for physical_reg in self.physical_reg_map:
-            for tacreg in self.physical_reg_map[physical_reg]:
-                self.tac_reg_map[tacreg] = physical_reg
-    
-    def update_interference(self, interference:Dict[TacReg, Set[TacReg]]) -> None:
-        self.interference_graph = interference
-    
-    def get_physical_mapping(self, treg:TacReg):
-        return self.tac_reg_map[treg] if treg in self.tac_reg_map else None
-
-
 class CFGFunc(object):
     def __init__(self, func:TacFunc):
         self.name = func.name
@@ -212,7 +124,10 @@ class CFGFunc(object):
         self.reg_allocator:FixedRegisterAllocator = FixedRegisterAllocator()
         self.process_func(func)
         self.self_reg = func.self_reg
-        self.reg_allocator.add_used_reg(PReg("%rdi"), self.self_reg)
+        self.num = func.num
+        self.callee_saved: list[PReg] = []
+        self.self_reg.set_preg(PReg("%r12"))
+        self.reg_allocator.add_used_reg(PReg("%r12"), self.self_reg)
     
     def process_func(self, func:TacFunc) -> None:
         # allocate all CFB Blocks
@@ -246,16 +161,35 @@ class CFGFunc(object):
         for cfg_block in self.cfg_blocks:
             str_list.append(repr(cfg_block))
         return "".join(str_list)
+
+    def create_reg(self, isstack: bool=False) -> TacReg:
+        temp = TacReg(self.num, isstack)
+        self.num += 1
+        return temp
+
+    def create_label(self) -> TacLabel:
+        temp = TacLabel(self.num)
+        self.num += 1
+        return temp
     
-    def calc_liveness(self) -> None:
+    def calc_liveness(self) -> bool:
+        for cfg_block in self.cfg_blocks:
+            cfg_block.live_out.clear()
+            cfg_block.live_in.clear()
+
         # make sure self is set as a global variable: must always persist
+        #self.cfg_blocks[-1].live_out.add(self.self_reg)
+        work_list:Deque[CFGBlock] = deque([i for i in reversed(self.cfg_blocks)])
         self.cfg_blocks[-1].live_out.add(self.self_reg)
-        worklist = deque([cfg_block for cfg_block in reversed(self.cfg_blocks)])
-        while worklist:
-            cur_block = worklist.popleft()
-            if cur_block.calc_liveness():
-                for pred in cur_block.preds:
-                    worklist.append(pred)
+        while work_list:
+            cfg_block = work_list.popleft()
+            changed = cfg_block.calc_liveness()
+
+            if changed:
+                for pred in cfg_block.preds:
+                    work_list.append(pred)
+        
+        return changed
         # for cfg_block in reversed(self.cfg_blocks):
         #     cfg_block.calc_liveness()
     
@@ -307,7 +241,7 @@ class CFGFunc(object):
         
         # create a mapping of physical registers to actual registers
         self.reg_allocator.construct_tac_reg_map()
-        pass
+        self.callee_saved = self.reg_allocator.get_used_callee_regs()
 
     def precolor_regs(self) -> None:
         # some registers are forced due to the calling convention
@@ -357,17 +291,6 @@ class CFGFunc(object):
         for reg, reg_set in self.interference.items():
             print(f"{reg}: {reg_set if reg_set else ''}")
         pass
-
-    def linear_scan_alloc(self) -> None:
-        def expire_old_intervals(active:List[int], start:int):
-            while active[0] > start:
-                heappop(active)
-            self.reg_allocator.dealloc_reg()
-
-        def spill_at_interval():
-            pass
-        pass
-        #for inst in self.
     
     def to_tacfunc(self) -> TacFunc:
         insts = []
@@ -378,10 +301,9 @@ class CFGFunc(object):
         if self.stack_space % 16 != 0:
             self.stack_space += 8
 
-        return TacFunc(self.name, self.params, insts, self.stack_space)
+        return TacFunc(self.name, self.params, insts, self.stack_space, self.callee_saved)
 
     def resolve_stack_discipline(self) -> None:
         # we want to make sure we are able to push/pop necessary registers when calling functions
         for cfg_block in self.cfg_blocks:
             cfg_block.resolve_stack_discipline(self.reg_allocator)
-

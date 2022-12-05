@@ -114,19 +114,49 @@ class ConstantPropogator(object):
     class BOT(object):
         pass
 
+    class ConstantPropBlock(object):
+        def __init__(self, block:CFGBlock):
+            self.block = block
+            self.incoming:Dict[TacReg, Union[int, str, ConstantPropogator.TOP, ConstantPropogator.BOT]] = {}
+            self.outgoing:Dict[TacReg, Union[int, str, ConstantPropogator.TOP, ConstantPropogator.BOT]] = {}
+            self.constants: Dict[TacReg, Union[int, str, ConstantPropogator.TOP, ConstantPropogator.BOT]] = {}
+            self.changed = True
+
+        def __repr__(self):
+            return f"CPB: {self.block} {self.incoming} {self.outgoing}"
+
+        def __hash__(self):
+            return hash(self.block)
+
+        
+
     def __init__(self, cfg_func: CFGFunc):
         self.cfg_func = cfg_func
         self.constants:Dict[TacReg, Union[int, str]] = {}
         self.variable_set: set[PReg] = set()
         self.voids:Dict[TacReg, bool] = {}
+        self.const_prop_blocks: list[ConstantPropogator.ConstantPropBlock] = []
+        self.init_blocks()
 
     def optimize(self) -> None:
         for cfg in self.cfg_func.cfg_blocks:
             self.optimize_block(cfg)
         
         self.cfg_func.calc_liveness()
+        print(self.constants)
+
+    def init_blocks(self) -> None:
+        for cfg in self.cfg_func.cfg_blocks:
+            self.const_prop_blocks.append(ConstantPropogator.ConstantPropBlock(cfg))
+
 
     def add_to_constants(self, tacinst:TacInst) -> None:
+        def add_value(dest: TacReg, value:Union[int, str]):
+            if dest in self.constants and isinstance(self.constants[dest], ConstantPropogator.TOP):
+                return 
+
+            self.constants[dest] = value
+
         dest = tacinst.get_dest_operand()
         srcs = tacinst.get_src_operands()
         if dest is None or not srcs:
@@ -144,6 +174,7 @@ class ConstantPropogator(object):
         
         for src in srcs:
             if src not in self.constants or isinstance(self.constants[src], self.TOP):
+                self.constants[dest] = self.TOP()
                 return
 
         if isinstance(tacinst, (TacLoadPrim, TacStorePrim)):
@@ -152,32 +183,33 @@ class ConstantPropogator(object):
             pass
         elif isinstance(tacinst, TacBinOp):
             if isinstance(tacinst, TacAdd):
-                self.constants[dest] = self.constants[tacinst.src1] + self.constants[tacinst.src2]
+                add_value(dest, self.constants[tacinst.src1] + self.constants[tacinst.src2])
             elif isinstance(tacinst, TacSub):
-                self.constants[dest] = self.constants[tacinst.src1] - self.constants[tacinst.src2]
+                add_value(dest, self.constants[tacinst.src1] - self.constants[tacinst.src2])
             elif isinstance(tacinst, TacMul):
-                self.constants[dest] = self.constants[tacinst.src1] * self.constants[tacinst.src2]
+                add_value(dest, self.constants[tacinst.src1] * self.constants[tacinst.src2])
             elif isinstance(tacinst, TacDiv):
-                self.constants[dest] = int(self.constants[tacinst.src1] / self.constants[tacinst.src2])
+                add_value(dest, int(self.constants[tacinst.src1] / self.constants[tacinst.src2]))
+
         elif isinstance(tacinst, TacIcmp):
             if tacinst.src1 not in self.constants or tacinst.src2 not in self.constants:
                 return
 
             if tacinst.icmp_op == TacCmpOp.EQ:
-                self.constants[dest] = 1 if self.constants[tacinst.src1] == self.constants[tacinst.src2] else 0
+                add_value(dest, 1 if self.constants[tacinst.src1] == self.constants[tacinst.src2] else 0)
             elif tacinst.icmp_op == TacCmpOp.NE:
-                self.constants[dest] = 1 if self.constants[tacinst.src1] != self.constants[tacinst.src2] else 0
+                add_value(dest, 1 if self.constants[tacinst.src1] != self.constants[tacinst.src2] else 0)
             elif tacinst.icmp_op == TacCmpOp.LT:
-                self.constants[dest] = 1 if self.constants[tacinst.src1] < self.constants[tacinst.src2] else 0
+                add_value(dest, 1 if self.constants[tacinst.src1] < self.constants[tacinst.src2] else 0)
             elif tacinst.icmp_op == TacCmpOp.LE:
-                self.constants[dest] = 1 if self.constants[tacinst.src1] <= self.constants[tacinst.src2] else 0
+                add_value(dest, 1 if self.constants[tacinst.src1] <= self.constants[tacinst.src2] else 0)
         elif isinstance(tacinst, TacUnaryOp):
             if isinstance(tacinst, TacNegate):
-                self.constants[dest] = -self.constants[tacinst.src]
+                add_value(dest, -self.constants[tacinst.src])
             elif isinstance(tacinst, TacNot):
-                self.constants[dest] = 1 if self.constants[tacinst.src] == 0 else 0
-        else:
-            self.constants[dest] = self.TOP()
+                add_value(dest, 1 if self.constants[tacinst.src] == 0 else 0)
+        # else:
+        #     self.constants[dest] = self.TOP()
 
     def remove_objects_from_constants(self) -> None:
         cpy = self.constants.copy()

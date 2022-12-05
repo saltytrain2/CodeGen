@@ -175,26 +175,6 @@ class CodeGen(object):
 
             # move the parameters into place
             self.move_params(asm, inst.args, stack)
-            # param_registers = ["%rdi", "%rsi", "%rdx", "%rcx", "%r8", "%r9"]
-            # reg_params = inst.args[:6]
-            # visited_reg_params = set()
-            # for i, arg in enumerate(reg_params):
-            #     if arg.get_preg_str() in param_registers:
-            #         asm.append(f"\tmovq\t{arg.get_preg_str()}, {param_registers[i]}\n")
-            #         visited_reg_params.add(i)
-            # for i, arg in enumerate(reg_params):
-            #     if i not in visited_reg_params:
-            #         asm.append(f"\tmovq\t{arg.get_preg_str()}, {param_registers[i]}\n")
-            
-            # stack_params = inst.args[6:]
-            # for param in reversed(stack_params):
-            #     if param.isstack:
-            #         asm.append(f"\tmovq\t{param.get_preg_str()}, %r11\n")
-            #         asm.append("\tpushq\t%r11\n")
-            #         stack.append("%r11")
-            #     else:
-            #         asm.append(f"\tpushq\t{param.get_preg_str()}\n")
-            #         stack.append(param.get_preg_str())
             
             # 16 byte align the pushes
             if (self.stack_alignment + len(stack)) & 1:

@@ -178,7 +178,7 @@ class CFGFunc(object):
             cfg_block.live_in.clear()
 
         # make sure self is set as a global variable: must always persist
-        self.cfg_blocks[-1].live_out.add(self.self_reg)
+        #self.cfg_blocks[-1].live_out.add(self.self_reg)
         work_list:Deque[CFGBlock] = deque([i for i in reversed(self.cfg_blocks)])
         self.cfg_blocks[-1].live_out.add(self.self_reg)
         while work_list:

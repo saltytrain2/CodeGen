@@ -143,7 +143,6 @@ class ConstantPropogator(object):
             self.optimize_block(cfg)
         
         self.cfg_func.calc_liveness()
-        print(self.constants)
 
     def init_blocks(self) -> None:
         for cfg in self.cfg_func.cfg_blocks:
@@ -159,7 +158,7 @@ class ConstantPropogator(object):
 
         dest = tacinst.get_dest_operand()
         srcs = tacinst.get_src_operands()
-        if dest is None or not srcs:
+        if dest is None:
             return
         
         if dest in self.constants and isinstance(self.constants[dest], self.TOP):
@@ -189,25 +188,19 @@ class ConstantPropogator(object):
             elif isinstance(tacinst, TacMul):
                 add_value(dest, self.constants[tacinst.src1] * self.constants[tacinst.src2])
             elif isinstance(tacinst, TacDiv):
-                add_value(dest, int(self.constants[tacinst.src1] / self.constants[tacinst.src2]))
-
-        elif isinstance(tacinst, TacIcmp):
-            if tacinst.src1 not in self.constants or tacinst.src2 not in self.constants:
-                return
-
-            if tacinst.icmp_op == TacCmpOp.EQ:
-                add_value(dest, 1 if self.constants[tacinst.src1] == self.constants[tacinst.src2] else 0)
-            elif tacinst.icmp_op == TacCmpOp.NE:
-                add_value(dest, 1 if self.constants[tacinst.src1] != self.constants[tacinst.src2] else 0)
-            elif tacinst.icmp_op == TacCmpOp.LT:
-                add_value(dest, 1 if self.constants[tacinst.src1] < self.constants[tacinst.src2] else 0)
-            elif tacinst.icmp_op == TacCmpOp.LE:
-                add_value(dest, 1 if self.constants[tacinst.src1] <= self.constants[tacinst.src2] else 0)
+                add_value(dest, int(self.constants[tacinst.src1] / self.constants[tacinst.src2]) if self.constants[tacinst.src2] != 0 else 0)
         elif isinstance(tacinst, TacUnaryOp):
             if isinstance(tacinst, TacNegate):
                 add_value(dest, -self.constants[tacinst.src])
             elif isinstance(tacinst, TacNot):
                 add_value(dest, 1 if self.constants[tacinst.src] == 0 else 0)
+        elif isinstance(tacinst, TacCreate):
+            if tacinst.object == "Bool" or tacinst.object == "Int":
+                print(dest)
+                self.constants[dest] = 0
+            elif tacinst.object == "String":
+                self.constants[dest] = ""
+            self.variable_set.add(dest)
         # else:
         #     self.constants[dest] = self.TOP()
 
@@ -223,12 +216,10 @@ class ConstantPropogator(object):
         for tacinst in cfg.inst_list:
             self.add_to_constants(tacinst)
         
-        self.remove_objects_from_constants()
-        
         new_inst_list = []
         for i, tacinst in enumerate(cfg.inst_list):
             dest = tacinst.get_dest_operand()
-            if dest is None or dest not in self.constants or isinstance(self.constants[dest], self.TOP):
+            if dest is None or dest not in self.constants or dest in self.variable_set or isinstance(self.constants[dest], self.TOP):
                 new_inst_list.append(tacinst)
                 continue
             

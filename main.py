@@ -19,7 +19,7 @@ def main(argv):
     cfg = CFG(tac.get_tacfuncs())
     cfg.calc_interference()
     cfg.optimize()
-    cfg.debug_cfg()
+    #cfg.debug_cfg()
     cfg.alloc_regs()
     cfg.resolve_stack_discipline()
     cgen = CodeGen(impl_map, cfg.to_tacfuncs())

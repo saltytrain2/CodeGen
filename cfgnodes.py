@@ -65,7 +65,7 @@ class CFGBlock(object):
         self.live_in = self.inst_list[0].get_live_in()
         return changed
 
-    def fixed_alloc(self, reg_allocator:FixedRegisterAllocator) -> int:
+    def fixed_alloc(self, reg_allocator:FixedRegisterAllocator, is_callee_first: bool=True) -> None:
         """ 
         We now assign each tacreg a physical register based on the instruction
         This is heavily based on a lot of assumptions on what our tac looks like
@@ -77,27 +77,15 @@ class CFGBlock(object):
         rbp + offset -> stack temporaries
 
         """
-        offset = -8
         regs_to_alloc:List[TacReg] = []
         # before we just start allocating registers, we fix all returns that are supposed to be fixed
         for inst in self.inst_list:
-            if isinstance(inst, TacAlloc):
-                inst.dest.set_preg(PReg("%rbp", offset))
-                offset -= 8
-            elif isinstance(inst, TacStoreSelf):
-                inst.dest.set_preg(PReg("%r12"))
-                reg_allocator.add_used_reg(PReg("%r12"), inst.dest)
-            elif isinstance(inst, (TacCreate, TacCall, TacSyscall, TacBinOp, TacUnaryOp, TacLoad, TacLoadPrim, TacLoadImm)):
+            if isinstance(inst, (TacCreate, TacCall, TacSyscall, TacBinOp, TacUnaryOp, TacLoad, TacLoadPrim, TacLoadImm, TacIsZero)):
                 regs_to_alloc.append(inst.dest)
-
         
         for treg in regs_to_alloc:
-            physical_reg = reg_allocator.get_unused_reg(treg)
-            #assert physical_reg is not None
-
+            physical_reg = reg_allocator.get_unused_reg(treg, is_callee_first)
             treg.set_preg(physical_reg)
-
-        return abs(offset + 8)
 
     def resolve_stack_discipline(self, reg_allocator:FixedRegisterAllocator):
         for inst in self.inst_list:
@@ -126,8 +114,6 @@ class CFGFunc(object):
         self.self_reg = func.self_reg
         self.num = func.num
         self.callee_saved: list[PReg] = []
-        self.self_reg.set_preg(PReg("%r12"))
-        self.reg_allocator.add_used_reg(PReg("%r12"), self.self_reg)
     
     def process_func(self, func:TacFunc) -> None:
         # allocate all CFB Blocks
@@ -178,7 +164,6 @@ class CFGFunc(object):
             cfg_block.live_in.clear()
 
         # make sure self is set as a global variable: must always persist
-        #self.cfg_blocks[-1].live_out.add(self.self_reg)
         work_list:Deque[CFGBlock] = deque([i for i in reversed(self.cfg_blocks)])
         self.cfg_blocks[-1].live_out.add(self.self_reg)
         while work_list:
@@ -234,34 +219,34 @@ class CFGFunc(object):
         
         self.stack_space += offset - 16
 
+        inst_list = []
+        for cfg_block in self.cfg_blocks:
+            inst_list.extend(cfg_block.inst_list)
+        
+        found_self = False
+        call_count = 0
+        offset = -8
+        for inst in inst_list:
+            if isinstance(inst, TacAlloc):
+                inst.dest.set_preg(PReg("%rbp", offset))
+                offset -= 8
+            elif isinstance(inst, TacMarkSelf):
+                found_self = True
+            elif isinstance(inst, (TacCreate, TacCall, TacSyscall)) and found_self:
+                call_count += 1
+
+        self.self_reg.set_preg(PReg("%r12")) if call_count > 1 else self.self_reg.set_preg(PReg("%rdi"))
+        self.reg_allocator.self_reg = self.self_reg.get_preg()
+        self.reg_allocator.add_used_reg(self.reg_allocator.self_reg, self.self_reg)
+        self.stack_space += abs(offset + 8)
+
         # now handle everything else
         for cfg_block in self.cfg_blocks:
-            stack_space = cfg_block.fixed_alloc(self.reg_allocator)
-            self.stack_space += stack_space
+            cfg_block.fixed_alloc(self.reg_allocator, self.self_reg.get_preg() == PReg("%r12"))
         
         # create a mapping of physical registers to actual registers
         self.reg_allocator.construct_tac_reg_map()
         self.callee_saved = self.reg_allocator.get_used_callee_regs()
-
-    def precolor_regs(self) -> None:
-        # some registers are forced due to the calling convention
-        offset = 0
-        param_regs = ["%rdi", "%rsi", "%rdx", "%rcx", "%r8", "%r9"]
-        for i, param in enumerate(self.params):
-            if i < 7:
-                param.set_preg(PReg(param_regs[i]))
-            else:
-                param.set_preg(PReg("%rbp", offset))
-                offset += 8
-
-        offset = 8
-        for inst in self.cfg_blocks[-1].inst_list:
-            # declared variables on stack will always be stored in rbp - offset
-            if not isinstance(inst, TacDeclare):
-                break
-            inst.dest.set_preg(PReg("%rbp", offset))
-            offset -= 8
-        pass
 
     def calc_interference(self) -> None:
         # generate live sets for each node in CFG

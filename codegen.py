@@ -154,19 +154,22 @@ class CodeGen(object):
         elif isinstance(inst, TacStore):
             mem_reg = inst.dest.get_preg_str() if inst.offset is None else f"{inst.offset*8}({inst.dest.get_preg_str()})"
             asm.append(f"\tmovq\t{inst.src.get_preg_str()}, {mem_reg}\n")
+        elif isinstance(inst, TacStoreSelf):
+            asm.append(f"\tmovq\t{inst.src.get_preg_str()}, {inst.offset*8}({inst.dest.get_preg_str()})\n")
         elif isinstance(inst, TacLoadPrim):
             asm.append(f"\tmovq\t24({inst.src.get_preg_str()}), {inst.dest.get_preg_str()}\n")
         elif isinstance(inst, TacStorePrim):
             asm.append(f"\tmovq\t{inst.src.get_preg_str()}, 24({inst.dest.get_preg_str()})\n")
         elif isinstance(inst, TacLoadImm):
             dest = inst.dest.get_preg_str()
+            dest_32 = inst.dest.get_preg_32_str()
             if isinstance(inst.imm, TacImmLabel):
                 asm.append(f"\tleaq\t{inst.imm.val}(%rip), {dest}\n")
             elif isinstance(inst.imm, TacStr):
                 str_label = self.string_allocator.add_string(inst.imm.val)
                 asm.append(f"\tleaq\t{str_label}(%rip), {dest}\n")
             elif isinstance(inst.imm, TacImm):
-                asm.append(f"\tmovq\t${inst.imm.val}, {dest}\n")
+                asm.append(f"\tmovq\t${inst.imm.val}, {dest}\n") if inst.imm.val != 0 else asm.append(f"\txor\t{dest_32}, {dest_32}\n")
         elif isinstance(inst, (TacCall, TacSyscall, TacCreate)):
             stack:List[str] = []
             for reg in inst.save_regs:
@@ -224,7 +227,7 @@ class CodeGen(object):
             elif inst.cond == TacCmpOp.NE:
                 asm.append(f"\tjne\t{self.label_allocator.emit_label(inst.true_label)}\n")
             asm.append(f"\tjmp\t{self.label_allocator.emit_label(inst.false_label)}\n")
-        elif isinstance(inst, TacStoreSelf):
+        elif isinstance(inst, TacMarkSelf):
             asm.append(f"\tmovq\t{inst.self_obj.get_preg_str()}, {inst.dest.get_preg_str()}\n")
         elif isinstance(inst, TacNot):
             asm.append(f"\tmovq\t{inst.src.get_preg_str()}, {inst.dest.get_preg_str()}\n")
@@ -234,6 +237,16 @@ class CodeGen(object):
             asm.append(f"\tneg\t{inst.dest.get_preg_str()}\n")  
         elif isinstance(inst, TacUnreachable):
             asm.append(f"\tnop\n")
+        elif isinstance(inst, TacIsZero):
+            asm.append(f"\txor\t%eax, %eax\n")
+            asm.append(f"\tcmpq\t{inst.src.get_preg_str()}, %rax\n")
+            asm.append(f"\tsetz\t%al\n")
+            asm.append(f"\tmovzbq\t%al, {inst.dest.get_preg_str()}\n")
+        elif isinstance(inst, TacExit):
+            asm.append(f"\tmovq\t{inst.str.get_preg_str()}, %rdi\n")
+            asm.append(f"\tcall\tcooloutstr\n")
+            asm.append("\txor\t%edi, %edi\n")
+            asm.append("\tcall\texit@PLT\n")
 
     def move_params(self, asm: List[str], params: List[TacReg], stack: List[PReg]) -> None:
         param_registers = ["%rdi", "%rsi", "%rdx", "%rcx", "%r8", "%r9"]

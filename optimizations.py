@@ -27,6 +27,8 @@ class FixedRegisterAllocator(object):
 
     def get_caller_reg(self, input_reg:TacReg) -> PReg:
         for physical_reg in self.caller_saved[:-2]:
+            if physical_reg == self.self_reg:
+                continue
             # if the register is unused, great
             if not self.physical_reg_map[physical_reg]:
                 self.physical_reg_map[physical_reg].append(input_reg)
@@ -46,7 +48,9 @@ class FixedRegisterAllocator(object):
         return None
 
     def get_callee_reg(self, input_reg:TacReg) -> PReg:
-        for physical_reg in self.callee_saved[1:]:
+        for physical_reg in self.callee_saved:
+            if physical_reg == self.self_reg:
+                continue
             # if the register is unused, yay
             if not self.physical_reg_map[physical_reg]:
                 self.physical_reg_map[physical_reg].append(input_reg)
@@ -75,19 +79,34 @@ class FixedRegisterAllocator(object):
         if physical_reg in self.callee_saved:
             self.used_callee_regs.add(physical_reg)
     
-    def get_unused_reg(self, tacreg:TacReg) -> None:
-        # lets try to get a caller-saved register
-        reg = self.get_callee_reg(tacreg)
-        if reg is not None:
-            self.used_callee_regs.add(reg)
-            return reg
+    def get_unused_reg(self, tacreg:TacReg, is_callee_first: bool=True) -> PReg:
+        def callee_first(tacreg: TacReg) -> PReg:
+            # lets try to get a caller-saved register
+            reg = self.get_callee_reg(tacreg)
+            if reg is not None:
+                self.used_callee_regs.add(reg)
+                return reg
 
-        reg = self.get_caller_reg(tacreg)
-        if reg is not None:
-            return reg
+            reg = self.get_caller_reg(tacreg)
+            if reg is not None:
+                return reg
 
-        raise Exception("We ran out of regs, you need to start spilling to memory")
+            raise Exception("We ran out of regs, you need to start spilling to memory")
+        
+        def caller_first(tacreg: TacReg) -> PReg:
+            # lets try to get a caller-saved register
+            reg = self.get_caller_reg(tacreg)
+            if reg is not None:
+                return reg
 
+            reg = self.get_callee_reg(tacreg)
+            if reg is not None:
+                self.used_callee_regs.add(reg)
+                return reg
+
+            raise Exception("We ran out of regs, you need to start spilling to memory")
+        
+        return callee_first(tacreg) if is_callee_first else caller_first(tacreg)
     def reset(self) -> None:
         self.physical_reg_map.clear()
         self.tac_reg_map.clear()
@@ -133,6 +152,7 @@ class ConstantPropogator(object):
     def __init__(self, cfg_func: CFGFunc):
         self.cfg_func = cfg_func
         self.constants:Dict[TacReg, Union[int, str]] = {}
+        self.prim_values:Dict[TacReg, Union[int, str]] = {}
         self.variable_set: set[PReg] = set()
         self.voids:Dict[TacReg, bool] = {}
         self.const_prop_blocks: list[ConstantPropogator.ConstantPropBlock] = []
@@ -196,7 +216,6 @@ class ConstantPropogator(object):
                 add_value(dest, 1 if self.constants[tacinst.src] == 0 else 0)
         elif isinstance(tacinst, TacCreate):
             if tacinst.object == "Bool" or tacinst.object == "Int":
-                print(dest)
                 self.constants[dest] = 0
             elif tacinst.object == "String":
                 self.constants[dest] = ""
